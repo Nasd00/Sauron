@@ -65,6 +65,7 @@ export type Db = {
   };
   alerts: {
     subscribe(callback: RowCallback<Alert>): () => void;
+    create(incidentId: string, watchId: string): Promise<void>;
   };
   watches: {
     create(watch: Watch): Promise<void>;
@@ -93,6 +94,7 @@ export function createDb(connection: GeneratedDbConnection): Db {
     },
     alerts: {
       subscribe: callback => subscribe(connection.db.alert)(row => callback(toAlert(row))),
+      create: (incidentId, watchId) => connection.reducers.createAlert({ incidentId, watchId }),
     },
     watches: {
       create: watch => connection.reducers.createWatch({ input: { ...watch, active: true } }),
