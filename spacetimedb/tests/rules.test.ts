@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { Camera, Incident, IncidentStatus, Observation } from "@tempmhacks/shared";
+import type { Alert, Camera, Incident, IncidentStatus, Observation, Watch } from "@tempmhacks/shared";
 import {
   cameraStatusUpdate, requireConfidence, requireTimestamp, validateCamera,
   validateObservation, validateNewIncident, updateDetection,
-  confirmIncident, dismissIncident, resolveIncident,
+  confirmIncident, dismissIncident, resolveIncident, validateWatch,
+  markAlertSent, markAlertFailed,
 } from "../src/rules.js";
 
 const candidate: Incident = {
@@ -39,6 +40,28 @@ test("timestamps use safe integer Unix milliseconds", () => {
   for (const value of [-1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
     assert.throws(() => requireTimestamp(value), /Timestamp/);
   }
+});
+
+test("watch validation activates and normalizes a positive-radius watch", () => {
+  const watch: Watch = {
+    id: "watch-1", userHandle: "user-1", placeLabel: "  City   Hall ",
+    latitude: 42, longitude: -83, radiusKm: 10, active: false, createdAt: 1000,
+  };
+  assert.deepEqual(validateWatch(watch), { ...watch, active: true, placeLabel: "City Hall" });
+  assert.throws(() => validateWatch({ ...watch, radiusKm: 0 }), /radiusKm/);
+  assert.throws(() => validateWatch({ ...watch, placeLabel: "   " }), /placeLabel/);
+});
+
+test("alerts can leave pending exactly once", () => {
+  const alert: Alert = {
+    id: "alert-1", incidentId: "incident-1", watchId: "watch-1", status: "pending", createdAt: 1000,
+  };
+  const sent = markAlertSent(alert, "provider-1", 2000);
+  assert.deepEqual(sent, { ...alert, status: "sent", providerMessageId: "provider-1", sentAt: 2000 });
+  assert.throws(() => markAlertSent(sent, "provider-2", 3000), /Cannot mark sent/);
+  const failed = markAlertFailed(alert, "provider unavailable");
+  assert.deepEqual(failed, { ...alert, status: "failed", error: "provider unavailable" });
+  assert.throws(() => markAlertFailed(failed, "retry"), /Cannot mark failed/);
 });
 
 test("observation accepts only smoke_fire without mutating input", () => {
