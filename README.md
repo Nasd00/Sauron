@@ -39,9 +39,22 @@ npm run demo:start
 npm run demo:reset
 ```
 
-These commands currently print placeholder messages and exit successfully.
-Each workstream should replace its corresponding command when implemented.
-The demo reset placeholder does not modify any data.
+The incident, Photon, alert, CV-process, and demo-reset commands remain safe
+placeholders until those workstreams supply their long-running processes.
+
+## Web globe
+
+The web app is a Vite + TypeScript Cesium shell. It uses OpenStreetMap imagery
+and ellipsoid terrain, so a Cesium Ion token is not required. To use one for
+future Ion-hosted assets, set `VITE_CESIUM_ION_TOKEN` in `.env`.
+
+```sh
+npm run dev:web
+npm run build:web
+```
+
+The current marker for `demo-camera-001` is intentionally hard-coded. Realtime
+camera data is added by a later workstream.
 
 ## Shared contracts
 
