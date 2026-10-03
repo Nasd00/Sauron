@@ -66,6 +66,24 @@ export const CameraInput = __t.object("CameraInput", {
 });
 export type CameraInput = __Infer<typeof CameraInput>;
 
+export const InboundReceipt = __t.object("InboundReceipt", {
+  messageId: __t.string(),
+  spaceId: __t.string(),
+  senderId: __t.string(),
+  receivedAt: __t.f64(),
+  contentType: __t.string(),
+});
+export type InboundReceipt = __Infer<typeof InboundReceipt>;
+
+export const InboundReceiptInput = __t.object("InboundReceiptInput", {
+  messageId: __t.string(),
+  spaceId: __t.string(),
+  senderId: __t.string(),
+  receivedAt: __t.f64(),
+  contentType: __t.string(),
+});
+export type InboundReceiptInput = __Infer<typeof InboundReceiptInput>;
+
 export const Incident = __t.object("Incident", {
   id: __t.string(),
   cameraId: __t.string(),
@@ -129,7 +147,8 @@ export type ObservationInput = __Infer<typeof ObservationInput>;
 
 export const Watch = __t.object("Watch", {
   id: __t.string(),
-  userHandle: __t.string(),
+  spaceId: __t.string(),
+  senderId: __t.string(),
   placeLabel: __t.string(),
   latitude: __t.f64(),
   longitude: __t.f64(),
@@ -141,7 +160,8 @@ export type Watch = __Infer<typeof Watch>;
 
 export const WatchInput = __t.object("WatchInput", {
   id: __t.string(),
-  userHandle: __t.string(),
+  spaceId: __t.string(),
+  senderId: __t.string(),
   placeLabel: __t.string(),
   latitude: __t.f64(),
   longitude: __t.f64(),
