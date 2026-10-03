@@ -6,6 +6,6 @@
   "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "scripts": { "build": "tsc -p tsconfig.json" },
+  "scripts": { "build": "tsc -p tsconfig.json && tsc -p tsconfig.types.json" },
   "dependencies": { "spacetimedb": "2.10.2" }
 }
