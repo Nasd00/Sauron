@@ -59,6 +59,9 @@ const db = schema({
   module_config: table({ name: "module_config" }, {
     ownerIdentity: t.identity().primaryKey(),
   }),
+  spectrum_event: table({ name: "spectrum_event" }, {
+    eventId: t.string().primaryKey(), receivedAt: t.f64(),
+  }),
   camera: table({ name: "camera", public: true }, {
     ...cameraFields, id: t.string().primaryKey(),
   }),
