@@ -1,0 +1,7 @@
+{
+  "name": "@tempmhacks/cv",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": { "@tempmhacks/shared": "*" }
+}

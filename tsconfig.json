@@ -1,0 +1,11 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": ["apps/web/src/**/*.ts", "services/cv/src/**/*.ts", "scripts/**/*.ts", "spacetimedb/tests/**/*.ts"]
+}

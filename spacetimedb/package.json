@@ -1,0 +1,8 @@
+{
+  "name": "@tempmhacks/spacetimedb",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "typecheck": "tsc --noEmit -p tsconfig.json" },
+  "dependencies": { "@tempmhacks/shared": "*", "spacetimedb": "2.10.2" }
+}
