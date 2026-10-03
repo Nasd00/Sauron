@@ -39,8 +39,58 @@ npm run demo:start
 npm run demo:reset
 ```
 
-The incident, Photon, alert, CV-process, and demo-reset commands remain safe
-placeholders until those workstreams supply their long-running processes.
+The incident, CV-process, and demo-reset commands remain safe placeholders until
+those workstreams supply their long-running processes.
+
+## Photon iMessage and alerts
+
+The Photon service uses Spectrum's managed iMessage provider only. It accepts
+native Spectrum webhooks at `POST /spectrum/webhook`, passes the exact request
+bytes to Spectrum for HMAC verification, durably claims each Photon message ID,
+and then runs the deterministic command router. The SDK acknowledges webhooks
+before the command callback runs.
+
+Set these values in the ignored `.env` file:
+
+```sh
+SPECTRUM_PROJECT_ID=
+SPECTRUM_PROJECT_SECRET=
+SPECTRUM_WEBHOOK_SECRET=
+SPACETIMEDB_URI=http://127.0.0.1:3000
+SPACETIMEDB_DATABASE=tempmhacks-local
+VITE_SPACETIMEDB_URI=http://127.0.0.1:3000
+VITE_SPACETIMEDB_DATABASE=tempmhacks-local
+WATCH_RADIUS_KM=10
+PUBLIC_APP_URL=https://your-public-web-app.example
+GEOCODER_USER_AGENT=Downwind/0.1 (contact: you@example.com)
+```
+
+Publish the current SpacetimeDB module, start the Photon service, and expose its
+port over public HTTPS. Configure the resulting URL in Photon as
+`https://your-service.example/spectrum/webhook`:
+
+```sh
+npm run db:publish
+npm run dev:photon
+npm run dev:alerts
+```
+
+Supported iMessage commands are `WATCH <place>`, `STATUS`, `STOP`, and `HELP`.
+The alert service matches confirmed incidents to active watches with Haversine
+distance, claims each pending alert before sending, and records either the
+Spectrum message ID or a terminal failure.
+
+Alert links use `/incident/:incidentId`. The web app connects with the two
+`VITE_SPACETIMEDB_*` values, selects and focuses that exact incident, retains
+resolved incident details, and shows explicit not-found or retryable database
+errors.
+
+The default geocoder is the public OpenStreetMap Nominatim service. Queries are
+end-user initiated, serialized to at most one request per second, and cached in
+process. Provide an identifying `GEOCODER_USER_AGENT`, retain OpenStreetMap
+attribution in product surfaces, and review the Nominatim usage policy before
+deployment. `GEOCODER_BASE_URL` can switch to another compatible or self-hosted
+endpoint without a code change. Geocoding data © OpenStreetMap contributors.
 
 ## Web globe
 
