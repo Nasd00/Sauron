@@ -84,6 +84,20 @@ unchanged. It uses `SPACETIME_BIN`, `SPACETIMEDB_URI`, and
 [official K2 camera page](https://www.usgs.gov/media/webcams/k2cam-live-image-kaluapele-kilauea-caldera-uekahuna-bluff)
 and the [USGS webcam disclaimer](https://www.usgs.gov/volcanoes/kilauea/webcams).
 
+## Frame sources
+
+`services/cv/src/sources/` exports the model-free `FrameSource` interface plus:
+
+- `ReplayFrameSource`, which invokes FFmpeg without a shell, samples a local
+  video at a configurable interval (2,000 ms by default), emits frames in order,
+  terminates cleanly at EOF, and can be started again.
+- `LiveFrameSource`, which polls a public snapshot URL at the same configurable
+  cadence and aborts in-flight HTTP work when stopped.
+
+Install FFmpeg and ensure `ffmpeg` is on `PATH`, or set `FFMPEG_PATH`, before
+running replay ingestion. The frame-source module contains no model or inference
+imports; consumers receive timestamped JPEG bytes and decide what to do next.
+
 ## Shared contracts
 
 `packages/shared/src/types.ts` is the canonical source for Camera, Observation,
