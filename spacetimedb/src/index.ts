@@ -1,4 +1,4 @@
-import { t, SenderError, type Infer, type ReducerCtx } from "spacetimedb/server";
+import { Router, SyncResponse, t, SenderError, type Infer, type ReducerCtx } from "spacetimedb/server";
 import type { Alert, Camera, Observation, Incident, Watch } from "@tempmhacks/shared";
 import db, { cameraInput, observationInput, incidentInput, watchInput, alertInput } from "./schema";
 import {
@@ -10,6 +10,44 @@ import {
 
 export default db;
 type Context = ReducerCtx<typeof db.schemaType>;
+
+type SpectrumWebhook = { event_id?: unknown; eventId?: unknown };
+
+export const spectrum_webhook = db.httpHandler({ name: "spectrum_webhook" }, (ctx, request) => {
+  if (request.method !== "POST") {
+    return new SyncResponse(JSON.stringify({ error: "Method not allowed" }), {
+      status: 405, headers: { "content-type": "application/json", allow: "POST" },
+    });
+  }
+
+  let payload: SpectrumWebhook;
+  try {
+    payload = request.json() as SpectrumWebhook;
+  } catch {
+    return new SyncResponse(JSON.stringify({ error: "Request body must be valid JSON" }), {
+      status: 400, headers: { "content-type": "application/json" },
+    });
+  }
+
+  const eventId = typeof payload.event_id === "string"
+    ? payload.event_id : typeof payload.eventId === "string" ? payload.eventId : undefined;
+  if (!eventId?.trim()) {
+    return new SyncResponse(JSON.stringify({ error: "Missing event_id" }), {
+      status: 400, headers: { "content-type": "application/json" },
+    });
+  }
+
+  const accepted = ctx.withTx(tx => {
+    if (tx.db.spectrum_event.eventId.find(eventId)) return false;
+    tx.db.spectrum_event.insert({ eventId, receivedAt: Date.now() });
+    return true;
+  });
+  return new SyncResponse(JSON.stringify({ accepted, duplicate: !accepted }), {
+    status: 202, headers: { "content-type": "application/json" },
+  });
+});
+
+export const http = db.httpRouter(new Router().post("/webhooks/spectrum", spectrum_webhook));
 
 export const init = db.init(ctx => {
   ctx.db.module_config.insert({ ownerIdentity: ctx.sender });
