@@ -7,5 +7,5 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["apps/web/src/**/*.ts", "services/cv/src/**/*.ts", "services/cv/tests/**/*.ts", "scripts/**/*.ts", "spacetimedb/tests/**/*.ts"]
+  "include": ["apps/web/src/**/*.ts", "services/alerts/src/**/*.ts", "services/alerts/tests/**/*.ts", "services/cv/src/**/*.ts", "services/cv/tests/**/*.ts", "scripts/**/*.ts", "spacetimedb/tests/**/*.ts"]
 }
