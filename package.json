@@ -2,6 +2,7 @@
   "name": "tempmhacks",
   "version": "0.0.0",
   "private": true,
+  "type": "module",
   "workspaces": ["packages/shared", "packages/db-generated", "apps/web", "services/cv", "spacetimedb"],
   "description": "Repository scaffold and local development commands for tempMhacks",
   "scripts": {
@@ -12,13 +13,15 @@
     "db:build": "npm run typecheck && spacetime build --module-path spacetimedb",
     "db:publish": "npm run typecheck && spacetime publish --server local --module-path spacetimedb tempmhacks-local",
     "test:integration": "tsx scripts/test-spacetimedb.ts",
+    "demo:download-fixture": "tsx scripts/demo/download-fixture.ts",
+    "demo:seed:cameras": "tsx scripts/demo/cameras.ts",
     "dev:web": "npm run dev --workspace @tempmhacks/web",
     "build:web": "npm run build:shared && npm run build --workspace @tempmhacks/web",
     "dev:cv": "node -e \"console.log('Placeholder: implement computer vision development in services/cv/')\"",
     "dev:incident": "node -e \"console.log('Placeholder: implement incident development in services/incident/')\"",
     "dev:photon": "node -e \"console.log('Placeholder: implement Photon development in services/photon/')\"",
     "dev:alerts": "node -e \"console.log('Placeholder: implement alerts development in services/alerts/')\"",
-    "demo:start": "node -e \"console.log('Placeholder: implement demo startup in scripts/demo/')\"",
+    "demo:start": "node -e \"console.log('Run npm run demo:download-fixture, npm run db:publish, then npm run demo:seed:cameras')\"",
     "demo:reset": "node -e \"console.log('Placeholder: implement demo reset in scripts/demo/')\""
   },
   "devDependencies": {

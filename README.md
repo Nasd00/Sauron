@@ -56,6 +56,34 @@ npm run build:web
 The current marker for `demo-camera-001` is intentionally hard-coded. Realtime
 camera data is added by a later workstream.
 
+## Demo cameras and replay fixture
+
+The deterministic replay camera is `demo-camera-001` at `42.2808, -83.7430`.
+Its sample is an 11-second, public-domain USGS video of lava falls and a steam
+cloud. Downloading is explicit so a missing fixture never prevents installing,
+building, or seeding the project:
+
+```sh
+npm run demo:download-fixture
+npm run demo:seed:cameras
+```
+
+The optional live source is the USGS Hawaiian Volcano Observatory K2 camera at
+Uēkahuna bluff (`19.4202, -155.2881`). Its current JPEG is public domain and the
+camera can be unavailable because of darkness, weather, maintenance, or volcanic
+conditions. Register both the replay and live camera in one idempotent command:
+
+```sh
+ENABLE_LIVE_CAMERA=1 npm run demo:seed:cameras
+```
+
+The seed command treats an existing camera ID as success and leaves that row
+unchanged. It uses `SPACETIME_BIN`, `SPACETIMEDB_URI`, and
+`SPACETIMEDB_DATABASE` when set; otherwise it targets `tempmhacks-local` at
+`http://127.0.0.1:3000`. The live source is operated by USGS HVO; see the
+[official K2 camera page](https://www.usgs.gov/media/webcams/k2cam-live-image-kaluapele-kilauea-caldera-uekahuna-bluff)
+and the [USGS webcam disclaimer](https://www.usgs.gov/volcanoes/kilauea/webcams).
+
 ## Shared contracts
 
 `packages/shared/src/types.ts` is the canonical source for Camera, Observation,
