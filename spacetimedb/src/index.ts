@@ -1,11 +1,11 @@
 import { t, SenderError, type Infer, type ReducerCtx } from "spacetimedb/server";
-import type { Alert, Camera, Observation, Incident, Watch } from "@tempmhacks/shared";
-import db, { cameraInput, observationInput, incidentInput, watchInput, alertInput } from "./schema";
+import type { Alert, Camera, Observation, Incident, Watch, InboundReceipt } from "@tempmhacks/shared";
+import db, { cameraInput, observationInput, incidentInput, watchInput, alertInput, inboundReceiptInput } from "./schema";
 import {
   validateCamera, validateObservation, validateNewIncident, cameraStatusUpdate,
   requireCameraStatus, requireTimestamp, updateDetection, confirmIncident,
   dismissIncident, resolveIncident,
-  validateWatch, validateAlertStatus, markAlertSent, markAlertFailed,
+  validateWatch, validateAlertStatus, claimAlert, markAlertSent, markAlertFailed,
 } from "./rules";
 
 export default db;
@@ -100,15 +100,29 @@ export const create_watch = db.reducer({ input: watchInput }, (ctx, { input }) =
   const watch = checked(() => validateWatch(input as Watch));
   if (ctx.db.watch.id.find(watch.id)) throw new SenderError(`Watch ${watch.id} already exists`);
   for (const existing of ctx.db.watch.byActive.filter(true)) {
-    if (existing.userHandle === watch.userHandle) ctx.db.watch.id.update({ ...existing, active: false });
+    if (existing.senderId === watch.senderId) ctx.db.watch.id.update({ ...existing, active: false });
   }
   ctx.db.watch.insert(watch);
 });
 
-export const deactivate_watches_for_user = db.reducer({ userHandle: t.string() }, (ctx, { userHandle }) => {
+export const deactivate_watches_for_sender = db.reducer({ senderId: t.string() }, (ctx, { senderId }) => {
   for (const watch of ctx.db.watch.byActive.filter(true)) {
-    if (watch.userHandle === userHandle) ctx.db.watch.id.update({ ...watch, active: false });
+    if (watch.senderId === senderId) ctx.db.watch.id.update({ ...watch, active: false });
   }
+});
+
+export const claim_inbound_message = db.reducer({ receipt: inboundReceiptInput }, (ctx, { receipt }) => {
+  if (ctx.db.inbound_receipt.messageId.find(receipt.messageId)) {
+    throw new SenderError(`Inbound message ${receipt.messageId} was already claimed`);
+  }
+  checked(() => {
+    if (!receipt.messageId.trim() || !receipt.spaceId.trim() || !receipt.senderId.trim()) {
+      throw new Error("Inbound message identity fields must not be empty");
+    }
+    requireTimestamp(receipt.receivedAt);
+    if (!receipt.contentType.trim()) throw new Error("Inbound contentType must not be empty");
+  });
+  ctx.db.inbound_receipt.insert(receipt as InboundReceipt);
 });
 
 export const create_alert = db.reducer({ incidentId: t.string(), watchId: t.string() }, (ctx, { incidentId, watchId }) => {
@@ -134,6 +148,12 @@ export const mark_alert_sent = db.reducer({ alertId: t.string(), providerMessage
     if (!alert) throw new SenderError(`Alert ${alertId} does not exist`);
     ctx.db.alert.id.update(storedAlert(checked(() => markAlertSent(alert as Alert, providerMessageId, sentAt))));
   });
+
+export const claim_alert = db.reducer({ alertId: t.string() }, (ctx, { alertId }) => {
+  const alert = ctx.db.alert.id.find(alertId);
+  if (!alert) throw new SenderError(`Alert ${alertId} does not exist`);
+  ctx.db.alert.id.update(storedAlert(checked(() => claimAlert(alert as Alert))));
+});
 
 export const mark_alert_failed = db.reducer({ alertId: t.string(), error: t.string() }, (ctx, { alertId, error }) => {
   const alert = ctx.db.alert.id.find(alertId);

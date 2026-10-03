@@ -11,5 +11,5 @@ import {
 } from "spacetimedb";
 
 export default {
-  userHandle: __t.string(),
+  alertId: __t.string(),
 };

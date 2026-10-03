@@ -6,11 +6,13 @@
 import { type Infer as __Infer } from "spacetimedb";
 
 // Import all reducer arg schemas
+import ClaimAlertReducer from "../claim_alert_reducer";
+import ClaimInboundMessageReducer from "../claim_inbound_message_reducer";
 import ConfirmIncidentReducer from "../confirm_incident_reducer";
 import CreateAlertReducer from "../create_alert_reducer";
 import CreateIncidentReducer from "../create_incident_reducer";
 import CreateWatchReducer from "../create_watch_reducer";
-import DeactivateWatchesForUserReducer from "../deactivate_watches_for_user_reducer";
+import DeactivateWatchesForSenderReducer from "../deactivate_watches_for_sender_reducer";
 import DismissIncidentReducer from "../dismiss_incident_reducer";
 import InsertAlertReducer from "../insert_alert_reducer";
 import InsertWatchReducer from "../insert_watch_reducer";
@@ -22,11 +24,13 @@ import ResolveIncidentReducer from "../resolve_incident_reducer";
 import SetCameraStatusReducer from "../set_camera_status_reducer";
 import UpdateIncidentDetectionReducer from "../update_incident_detection_reducer";
 
+export type ClaimAlertParams = __Infer<typeof ClaimAlertReducer>;
+export type ClaimInboundMessageParams = __Infer<typeof ClaimInboundMessageReducer>;
 export type ConfirmIncidentParams = __Infer<typeof ConfirmIncidentReducer>;
 export type CreateAlertParams = __Infer<typeof CreateAlertReducer>;
 export type CreateIncidentParams = __Infer<typeof CreateIncidentReducer>;
 export type CreateWatchParams = __Infer<typeof CreateWatchReducer>;
-export type DeactivateWatchesForUserParams = __Infer<typeof DeactivateWatchesForUserReducer>;
+export type DeactivateWatchesForSenderParams = __Infer<typeof DeactivateWatchesForSenderReducer>;
 export type DismissIncidentParams = __Infer<typeof DismissIncidentReducer>;
 export type InsertAlertParams = __Infer<typeof InsertAlertReducer>;
 export type InsertWatchParams = __Infer<typeof InsertWatchReducer>;
