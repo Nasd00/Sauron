@@ -2,10 +2,11 @@
   "name": "tempmhacks",
   "version": "0.0.0",
   "private": true,
-  "workspaces": ["packages/shared", "apps/web", "services/cv", "spacetimedb"],
+  "workspaces": ["packages/shared", "packages/db-generated", "apps/web", "services/cv", "spacetimedb"],
   "description": "Repository scaffold and local development commands for tempMhacks",
   "scripts": {
-    "build:shared": "npm run build --workspace @tempmhacks/shared",
+    "db:generate": "mkdir -p packages/db-generated/src/generated && spacetime generate --lang typescript --out-dir packages/db-generated/src/generated --module-path spacetimedb",
+    "build:shared": "npm run build --workspace @tempmhacks/db-generated && npm run build --workspace @tempmhacks/shared",
     "typecheck": "npm run build:shared && tsc --noEmit -p tsconfig.json && npm run typecheck --workspace @tempmhacks/spacetimedb",
     "test": "npm run typecheck && tsx --test spacetimedb/tests/*.test.ts",
     "db:build": "npm run typecheck && spacetime build --module-path spacetimedb",

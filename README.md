@@ -59,6 +59,20 @@ npm run build:shared
 npm test
 ```
 
+## Database bindings
+
+Regenerate the module bindings into `packages/db-generated/src/generated/` with:
+
+```sh
+mkdir -p packages/db-generated/src/generated
+spacetime generate --lang typescript --out-dir packages/db-generated/src/generated --module-path spacetimedb
+```
+
+Application code imports `createDb` and `Db` from `@tempmhacks/shared/db`; it does
+not import generated bindings or the SpacetimeDB SDK directly. The adapter maps
+generated rows to the shared contracts and exposes the typed camera, observation,
+incident, alert, and watch operations.
+
 The shared package builds independently with
 `npm run build --workspace @tempmhacks/shared`. `npm test` compiles the shared
 package, web/CV imports, database module, and tests, then tests the lifecycle rules.

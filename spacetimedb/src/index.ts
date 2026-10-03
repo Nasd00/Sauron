@@ -1,10 +1,11 @@
 import { t, SenderError, type Infer, type ReducerCtx } from "spacetimedb/server";
-import type { Camera, Observation, Incident } from "@tempmhacks/shared";
+import type { Alert, Camera, Observation, Incident, Watch } from "@tempmhacks/shared";
 import db, { cameraInput, observationInput, incidentInput, watchInput, alertInput } from "./schema";
 import {
   validateCamera, validateObservation, validateNewIncident, cameraStatusUpdate,
   requireCameraStatus, requireTimestamp, updateDetection, confirmIncident,
   dismissIncident, resolveIncident,
+  validateWatch, validateAlertStatus, markAlertSent, markAlertFailed,
 } from "./rules";
 
 export default db;
@@ -35,6 +36,15 @@ function requireIncident(ctx: Context, id: string): Incident {
 // Shared optional properties map to explicit undefined options in storage.
 function storedIncident(incident: Incident): Infer<typeof incidentInput> {
   return { ...incident, confirmedAt: incident.confirmedAt, resolvedAt: incident.resolvedAt };
+}
+
+function storedAlert(alert: Alert): Infer<typeof alertInput> {
+  return {
+    ...alert,
+    sentAt: alert.sentAt,
+    providerMessageId: alert.providerMessageId,
+    error: alert.error,
+  };
 }
 
 export const register_camera = db.reducer({ camera: cameraInput }, (ctx, { camera }) => {
@@ -86,7 +96,52 @@ export const resolve_incident = db.reducer({ id: t.string(), resolvedAt: t.f64()
   ctx.db.incident.id.update(storedIncident(checked(() => resolveIncident(incident, resolvedAt))));
 });
 
-// Owner-only schema fixture writes. No delivery, watch matching, or automation.
+export const create_watch = db.reducer({ input: watchInput }, (ctx, { input }) => {
+  const watch = checked(() => validateWatch(input as Watch));
+  if (ctx.db.watch.id.find(watch.id)) throw new SenderError(`Watch ${watch.id} already exists`);
+  for (const existing of ctx.db.watch.byActive.filter(true)) {
+    if (existing.userHandle === watch.userHandle) ctx.db.watch.id.update({ ...existing, active: false });
+  }
+  ctx.db.watch.insert(watch);
+});
+
+export const deactivate_watches_for_user = db.reducer({ userHandle: t.string() }, (ctx, { userHandle }) => {
+  for (const watch of ctx.db.watch.byActive.filter(true)) {
+    if (watch.userHandle === userHandle) ctx.db.watch.id.update({ ...watch, active: false });
+  }
+});
+
+export const create_alert = db.reducer({ incidentId: t.string(), watchId: t.string() }, (ctx, { incidentId, watchId }) => {
+  const incident = ctx.db.incident.id.find(incidentId);
+  if (!incident) throw new SenderError("Alert incident does not exist");
+  if (incident.status !== "confirmed") throw new SenderError("Alerts require a confirmed incident");
+  const watch = ctx.db.watch.id.find(watchId);
+  if (!watch) throw new SenderError("Alert watch does not exist");
+  if (!watch.active) throw new SenderError("Alert watch is not active");
+  for (const existing of ctx.db.alert.byIncidentWatch.filter([incidentId, watchId])) {
+    throw new SenderError(`Alert ${existing.id} already exists for this incident and watch`);
+  }
+  const alert: Alert = {
+    id: `${incidentId}:${watchId}`, incidentId, watchId, status: "pending", createdAt: Date.now(),
+    sentAt: undefined, providerMessageId: undefined, error: undefined,
+  };
+  ctx.db.alert.insert(storedAlert(alert));
+});
+
+export const mark_alert_sent = db.reducer({ alertId: t.string(), providerMessageId: t.string(), sentAt: t.f64() },
+  (ctx, { alertId, providerMessageId, sentAt }) => {
+    const alert = ctx.db.alert.id.find(alertId);
+    if (!alert) throw new SenderError(`Alert ${alertId} does not exist`);
+    ctx.db.alert.id.update(storedAlert(checked(() => markAlertSent(alert as Alert, providerMessageId, sentAt))));
+  });
+
+export const mark_alert_failed = db.reducer({ alertId: t.string(), error: t.string() }, (ctx, { alertId, error }) => {
+  const alert = ctx.db.alert.id.find(alertId);
+  if (!alert) throw new SenderError(`Alert ${alertId} does not exist`);
+  ctx.db.alert.id.update(storedAlert(checked(() => markAlertFailed(alert as Alert, error))));
+});
+
+// Owner-only schema fixture writes for integration setup.
 function requireOwner(ctx: Context): void {
   if (!ctx.db.module_config.ownerIdentity.find(ctx.sender)) {
     throw new SenderError("Only the database owner may insert schema fixtures");
@@ -95,9 +150,9 @@ function requireOwner(ctx: Context): void {
 
 export const insert_watch = db.reducer({ watch: watchInput }, (ctx, { watch }) => {
   requireOwner(ctx);
-  checked(() => requireTimestamp(watch.createdAt));
+  const normalized = checked(() => validateWatch(watch as Watch));
   if (ctx.db.watch.id.find(watch.id)) throw new SenderError(`Watch ${watch.id} already exists`);
-  ctx.db.watch.insert(watch);
+  ctx.db.watch.insert(normalized);
 });
 
 export const insert_alert = db.reducer({ alert: alertInput }, (ctx, { alert }) => {
@@ -108,7 +163,7 @@ export const insert_alert = db.reducer({ alert: alertInput }, (ctx, { alert }) =
   for (const existing of ctx.db.alert.byIncidentWatch.filter([alert.incidentId, alert.watchId])) {
     throw new SenderError(`Alert ${existing.id} already exists for this incident and watch`);
   }
-  if (!["pending", "sent", "failed"].includes(alert.status)) throw new SenderError("Invalid alert status");
+  checked(() => validateAlertStatus(alert.status));
   checked(() => {
     requireTimestamp(alert.createdAt);
     if (alert.sentAt !== undefined) requireTimestamp(alert.sentAt);
