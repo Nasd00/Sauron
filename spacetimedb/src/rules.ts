@@ -1,4 +1,4 @@
-import type { Camera, Observation, Incident } from "@tempmhacks/shared";
+import type { Alert, Camera, Incident, Observation, Watch } from "@tempmhacks/shared";
 
 export function requireConfidence(confidence: number): void {
   if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
@@ -14,6 +14,40 @@ export function requireTimestamp(value: number): void {
 
 export function requireHazard(type: string): asserts type is "smoke_fire" {
   if (type !== "smoke_fire") throw new Error("Only smoke_fire observations and incidents are supported");
+}
+
+export function normalizePlaceLabel(placeLabel: string): string {
+  const normalized = placeLabel.trim().replace(/\s+/g, " ");
+  if (!normalized) throw new Error("Watch placeLabel must not be empty");
+  return normalized;
+}
+
+export function validateWatch(watch: Watch): Watch {
+  if (!watch.userHandle.trim()) throw new Error("Watch userHandle must not be empty");
+  if (!Number.isFinite(watch.radiusKm) || watch.radiusKm <= 0) {
+    throw new Error("Watch radiusKm must be greater than 0");
+  }
+  requireTimestamp(watch.createdAt);
+  return { ...watch, active: true, placeLabel: normalizePlaceLabel(watch.placeLabel) };
+}
+
+export function validateAlertStatus(status: string): asserts status is Alert["status"] {
+  if (status !== "pending" && status !== "sent" && status !== "failed") {
+    throw new Error("Invalid alert status");
+  }
+}
+
+export function markAlertSent(alert: Alert, providerMessageId: string, sentAt: number): Alert {
+  if (alert.status !== "pending") throw new Error(`Cannot mark ${alert.status} alert as sent`);
+  if (!providerMessageId.trim()) throw new Error("Provider message ID must not be empty");
+  requireTimestamp(sentAt);
+  return { ...alert, status: "sent", providerMessageId, sentAt };
+}
+
+export function markAlertFailed(alert: Alert, error: string): Alert {
+  if (alert.status !== "pending") throw new Error(`Cannot mark ${alert.status} alert as failed`);
+  if (!error.trim()) throw new Error("Alert error must not be empty");
+  return { ...alert, status: "failed", error };
 }
 
 export function requireCameraStatus(status: string): asserts status is Camera["status"] {
