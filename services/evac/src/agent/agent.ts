@@ -168,6 +168,14 @@ export class EvacAgent {
     void this.#run(() => undefined);
   }
 
+  /** What the demo operator can trigger: the supplied warning and the verified closure feed. */
+  catalog(): { warnings: Pick<OfficialWarning, "id" | "event" | "areaLabel">[]; closures: Pick<Closure, "id" | "road" | "description">[] } {
+    return {
+      warnings: this.#scenario.warnings.map(({ id, event, areaLabel }) => ({ id, event, areaLabel })),
+      closures: this.#scenario.closureLibrary.map(({ id, road, description }) => ({ id, road, description })),
+    };
+  }
+
   participant(id: string): Participant | undefined {
     return this.#participants.get(id);
   }
