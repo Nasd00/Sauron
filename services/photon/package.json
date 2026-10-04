@@ -1,11 +1,12 @@
 {
-  "name": "@tempmhacks/alerts",
+  "name": "@tempmhacks/photon",
   "version": "0.0.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "start": "tsx src/index.ts",
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "send-test": "tsx src/send-test.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {

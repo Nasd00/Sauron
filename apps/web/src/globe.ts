@@ -11,6 +11,7 @@ import {
   VerticalOrigin,
   Viewer,
 } from "cesium";
+import type { Incident } from "@tempmhacks/shared";
 
 export const demoCamera = {
   id: "demo-camera-001",
@@ -78,4 +79,38 @@ export function createGlobe(container: HTMLElement): Viewer {
   });
 
   return viewer;
+}
+
+export function focusIncident(viewer: Viewer, incident: Incident): void {
+  const entityId = `incident:${incident.id}`;
+  viewer.entities.removeById(entityId);
+  const entity = viewer.entities.add({
+    id: entityId,
+    name: `${incident.type} incident`,
+    position: Cartesian3.fromDegrees(incident.longitude, incident.latitude),
+    point: {
+      color: incident.status === "resolved" ? Color.fromCssColorString("#90a0aa") : Color.fromCssColorString("#ff3b24"),
+      heightReference: HeightReference.CLAMP_TO_GROUND,
+      outlineColor: Color.WHITE,
+      outlineWidth: 4,
+      pixelSize: 19,
+    },
+    label: {
+      backgroundColor: Color.fromCssColorString("#071018").withAlpha(0.9),
+      fillColor: Color.WHITE,
+      font: "700 14px system-ui",
+      outlineColor: Color.BLACK,
+      outlineWidth: 2,
+      pixelOffset: new Cartesian2(0, -32),
+      showBackground: true,
+      style: LabelStyle.FILL_AND_OUTLINE,
+      text: incident.type,
+      verticalOrigin: VerticalOrigin.BOTTOM,
+    },
+  });
+  viewer.selectedEntity = entity;
+  viewer.camera.flyTo({
+    destination: Cartesian3.fromDegrees(incident.longitude, incident.latitude, 75_000),
+    duration: 0.8,
+  });
 }
