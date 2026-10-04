@@ -1,9 +1,14 @@
 import { createHash } from "node:crypto";
+import { splitMessage } from "@tempmhacks/shared/text";
 import type { InboundMessage, MessagingStore, StructuredLogger } from "./types.js";
+import type { RouterReply } from "./router.js";
+
+export type Reply = (text: string) => Promise<unknown>;
+export type SendEvidence = (url: string, caption: string) => Promise<unknown>;
 
 export type MessageProcessorOptions = {
   store: MessagingStore;
-  route(message: InboundMessage): Promise<string | undefined>;
+  route(message: InboundMessage): Promise<RouterReply | undefined>;
   logger: StructuredLogger;
 };
 
@@ -12,7 +17,11 @@ function senderHash(senderId: string): string {
 }
 
 export function createMessageProcessor(options: MessageProcessorOptions) {
-  return async (message: InboundMessage, reply: (text: string) => Promise<unknown>): Promise<void> => {
+  return async (
+    message: InboundMessage,
+    reply: Reply,
+    sendEvidence?: SendEvidence,
+  ): Promise<void> => {
     const fields = {
       messageId: message.messageId,
       spaceId: message.spaceId,
@@ -26,11 +35,18 @@ export function createMessageProcessor(options: MessageProcessorOptions) {
     }
     try {
       const response = await options.route(message);
-      if (response) await reply(response);
+      if (response) {
+        // Long replies go out as a few shorter iMessages, in order.
+        for (const chunk of splitMessage(response.text)) await reply(chunk);
+        if (response.sendEvidence && response.evidenceUrl && sendEvidence) {
+          await sendEvidence(response.evidenceUrl, "Latest camera view");
+        }
+      }
       options.logger.info({
         ...fields,
         deduped: false,
         processingResult: response ? "replied" : "unsupported_content",
+        sentEvidence: Boolean(response?.sendEvidence && response.evidenceUrl),
       }, "inbound_message");
     } catch (error) {
       options.logger.error({

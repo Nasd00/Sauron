@@ -4,7 +4,7 @@ import { Spectrum } from "spectrum-ts";
 import { imessage } from "@spectrum-ts/imessage";
 import { connectDb } from "@tempmhacks/shared/db";
 import { createImessageMessenger } from "@tempmhacks/messaging";
-import { matchConfirmedIncident } from "./matcher.js";
+import { matchConfirmedIncident, matchConfirmedIncidentToProfiles } from "./matcher.js";
 import { createAlertSender } from "./sender.js";
 import { createAlertServiceStore } from "./store.js";
 
@@ -44,10 +44,15 @@ const sendAlert = createAlertSender({
   },
 });
 
+function matchIncident(incident: import("@tempmhacks/shared").Incident): void {
+  if (incident.status !== "confirmed") return;
+  void matchConfirmedIncident(incident, store).catch(error => console.error("alert_match_failed", error));
+  void matchConfirmedIncidentToProfiles(incident, store, { now: Date.now() })
+    .catch(error => console.error("alert_profile_match_failed", error));
+}
+
 database.db.incidents.subscribe(incident => {
-  if (incident.status === "confirmed") {
-    void matchConfirmedIncident(incident, store).catch(error => console.error("alert_match_failed", error));
-  }
+  matchIncident(incident);
 });
 database.db.alerts.subscribe(alert => {
   if (alert.status === "pending") {
@@ -56,7 +61,7 @@ database.db.alerts.subscribe(alert => {
 });
 for (const alert of store.listPending()) void sendAlert(alert);
 for (const incident of database.db.incidents.listConfirmed()) {
-  void matchConfirmedIncident(incident, store).catch(error => console.error("alert_match_failed", error));
+  matchIncident(incident);
 }
 
 console.info(JSON.stringify({ level: "info", message: "alert_service_started" }));

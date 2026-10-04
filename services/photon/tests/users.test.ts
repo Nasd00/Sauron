@@ -47,12 +47,16 @@ test("a registered watch answers to the user's later STATUS and STOP texts", asy
   const { directory } = fakeDirectory();
   const store = new MemoryMessagingStore();
   await registerPhotonUser(directory, { phone: "+15551234567", place: "Ann Arbor" }, { geocoder, store, radiusKm: 10 });
-  const route = createCommandRouter({ store, geocoder, radiusKm: 10 });
+  const route = createCommandRouter({
+    store, geocoder, radiusKm: 10, publicAppUrl: "https://example.test",
+  });
   const text = (body: string) => ({
     messageId: body, spaceId: "space-1", senderId: "imessage:+15551234567",
     receivedAt: "2026-10-04T18:00:00.000Z", content: { type: "text" as const, text: body },
   });
-  assert.equal(await route(text("STATUS")), `Watching ${place.label} within 10 km.`);
+  const status = await route(text("STATUS"));
+  assert.match(status?.text ?? "", /I don’t have a location for you/);
+  assert.match(status?.text ?? "", new RegExp(`Also watching ${place.label} within 10 km`));
   await route(text("STOP"));
   assert.equal(store.watches.filter(watch => watch.active).length, 0);
 });

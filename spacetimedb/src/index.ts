@@ -1,12 +1,13 @@
 import { Router, SyncResponse, t, SenderError, type Infer, type ReducerCtx } from "spacetimedb/server";
-import type { Alert, Camera, Observation, Incident, Watch, InboundReceipt } from "@tempmhacks/shared";
-import db, { cameraInput, observationInput, incidentInput, watchInput, alertInput, inboundReceiptInput } from "./schema";
+import type { Alert, Camera, Observation, Incident, Watch, InboundReceipt, UserAlertProfile, ConversationContext } from "@tempmhacks/shared";
+import db, { cameraInput, observationInput, incidentInput, watchInput, alertInput, inboundReceiptInput, userAlertProfileInput, conversationContextInput } from "./schema";
 import {
   validateCamera, validateObservation, validateNewIncident, cameraStatusUpdate,
   requireCameraStatus, requireTimestamp, updateDetection, confirmIncident,
   dismissIncident, resolveIncident,
   validateWatch, validateAlertStatus, claimAlert, markAlertSent, markAlertFailed,
-  claimInbound,
+  validateInboundReceipt,
+  validateUserAlertProfile, validateConversationContext,
 } from "./rules";
 
 export default db;
@@ -86,6 +87,20 @@ function storedAlert(alert: Alert): Infer<typeof alertInput> {
   };
 }
 
+function storedProfile(profile: UserAlertProfile): Infer<typeof userAlertProfileInput> {
+  return { ...profile, accuracyMeters: profile.accuracyMeters };
+}
+
+function storedContext(context: ConversationContext): Infer<typeof conversationContextInput> {
+  return {
+    ...context,
+    activeIncidentId: context.activeIncidentId,
+    lastCameraId: context.lastCameraId,
+    lastIntent: context.lastIntent,
+    alertedAt: context.alertedAt,
+  };
+}
+
 export const register_camera = db.reducer({ camera: cameraInput }, (ctx, { camera }) => {
   checked(() => validateCamera(camera as Camera));
   if (ctx.db.camera.id.find(camera.id)) throw new SenderError(`Camera ${camera.id} already exists`);
@@ -151,8 +166,17 @@ export const deactivate_watches_for_sender = db.reducer({ senderId: t.string() }
 });
 
 export const claim_inbound_message = db.reducer({ receipt: inboundReceiptInput }, (ctx, { receipt }) => {
-  const alreadyClaimed = ctx.db.inbound_receipt.messageId.find(receipt.messageId) !== undefined;
-  checked(() => claimInbound(receipt as InboundReceipt, alreadyClaimed));
+  // Validate identity/metadata first (pure, throws on malformed input).
+  checked(() => validateInboundReceipt(receipt as InboundReceipt));
+  // Dedup on messageId. On the deployed backend the primary-key accessor
+  // `.messageId.find()` returned false positives for this private table, and
+  // insert() does not throw on a duplicate key, so scan explicitly. This is O(n)
+  // in stored receipts; acceptable at MVP volume.
+  for (const existing of ctx.db.inbound_receipt.iter()) {
+    if (existing.messageId === receipt.messageId) {
+      throw new SenderError(`Inbound message ${receipt.messageId} was already claimed`);
+    }
+  }
   ctx.db.inbound_receipt.insert(receipt as InboundReceipt);
 });
 
@@ -173,6 +197,29 @@ export const create_alert = db.reducer({ incidentId: t.string(), watchId: t.stri
   ctx.db.alert.insert(storedAlert(alert));
 });
 
+// Profile-targeted alert. The alert's watchId column carries a namespaced target
+// id ("profile:<userId>") so profile and watch alerts never collide on the
+// (incidentId, target) uniqueness index. The sender resolves the source by prefix.
+export const create_alert_for_profile = db.reducer(
+  { incidentId: t.string(), userId: t.string() },
+  (ctx, { incidentId, userId }) => {
+    const incident = ctx.db.incident.id.find(incidentId);
+    if (!incident) throw new SenderError("Alert incident does not exist");
+    if (incident.status !== "confirmed") throw new SenderError("Alerts require a confirmed incident");
+    const profile = ctx.db.user_alert_profile.userId.find(userId);
+    if (!profile) throw new SenderError("Alert profile does not exist");
+    if (!profile.alertsEnabled) throw new SenderError("Alert profile has alerts disabled");
+    const targetId = `profile:${userId}`;
+    for (const existing of ctx.db.alert.byIncidentWatch.filter([incidentId, targetId])) {
+      throw new SenderError(`Alert ${existing.id} already exists for this incident and profile`);
+    }
+    const alert: Alert = {
+      id: `${incidentId}:${targetId}`, incidentId, watchId: targetId, status: "pending",
+      createdAt: Date.now(), sentAt: undefined, providerMessageId: undefined, error: undefined,
+    };
+    ctx.db.alert.insert(storedAlert(alert));
+  });
+
 export const mark_alert_sent = db.reducer({ alertId: t.string(), providerMessageId: t.string(), sentAt: t.f64() },
   (ctx, { alertId, providerMessageId, sentAt }) => {
     const alert = ctx.db.alert.id.find(alertId);
@@ -190,6 +237,44 @@ export const mark_alert_failed = db.reducer({ alertId: t.string(), error: t.stri
   const alert = ctx.db.alert.id.find(alertId);
   if (!alert) throw new SenderError(`Alert ${alertId} does not exist`);
   ctx.db.alert.id.update(storedAlert(checked(() => markAlertFailed(alert as Alert, error))));
+});
+
+// --- Current-location profiles and conversation context ---
+
+function requireProfile(ctx: Context, userId: string): UserAlertProfile {
+  const profile = ctx.db.user_alert_profile.userId.find(userId);
+  if (!profile) throw new SenderError(`Profile ${userId} does not exist`);
+  return profile as UserAlertProfile;
+}
+
+// Upserts a user's current-location monitoring profile (one row per userId),
+// preserving the original createdAt on update.
+export const upsert_user_alert_profile = db.reducer({ input: userAlertProfileInput }, (ctx, { input }) => {
+  const profile = checked(() => validateUserAlertProfile(input as UserAlertProfile));
+  const existing = ctx.db.user_alert_profile.userId.find(profile.userId);
+  if (existing) {
+    ctx.db.user_alert_profile.userId.update(storedProfile({ ...profile, createdAt: existing.createdAt }));
+  } else {
+    ctx.db.user_alert_profile.insert(storedProfile(profile));
+  }
+});
+
+export const set_alerts_enabled = db.reducer(
+  { userId: t.string(), alertsEnabled: t.bool(), updatedAt: t.f64() },
+  (ctx, { userId, alertsEnabled, updatedAt }) => {
+    const profile = requireProfile(ctx, userId);
+    checked(() => requireTimestamp(updatedAt));
+    ctx.db.user_alert_profile.userId.update(storedProfile({ ...profile, alertsEnabled, updatedAt }));
+  });
+
+// Upserts the per-conversation context that anchors grounded follow-ups.
+export const upsert_conversation_context = db.reducer({ input: conversationContextInput }, (ctx, { input }) => {
+  const context = checked(() => validateConversationContext(input as ConversationContext));
+  if (ctx.db.conversation_context.spaceId.find(context.spaceId)) {
+    ctx.db.conversation_context.spaceId.update(storedContext(context));
+  } else {
+    ctx.db.conversation_context.insert(storedContext(context));
+  }
 });
 
 // Owner-only schema fixture writes for integration setup.
@@ -221,3 +306,4 @@ export const insert_alert = db.reducer({ alert: alertInput }, (ctx, { alert }) =
   });
   ctx.db.alert.insert(alert);
 });
+

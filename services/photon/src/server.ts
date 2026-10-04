@@ -33,7 +33,9 @@ const geocoder = new NominatimGeocoder({
   baseUrl: config.geocoderBaseUrl,
   userAgent: config.geocoderUserAgent,
 });
-const route = createCommandRouter({ store, geocoder, radiusKm: config.watchRadiusKm });
+const route = createCommandRouter({
+  store, geocoder, radiusKm: config.watchRadiusKm, publicAppUrl: config.publicAppUrl,
+});
 const messenger = createImessageMessenger(spectrumApp);
 const logger = {
   info: (fields: Record<string, unknown>, message: string) => console.info(JSON.stringify({ level: "info", message, ...fields })),
@@ -96,9 +98,13 @@ const server = createServer(async (request, response) => {
   const result = await spectrumApp.webhook(
     { body: Buffer.concat(chunks), headers: normalizedHeaders(request.headers) },
     async (space, message) => {
-      const normalized = normalizeSpectrumMessage(space, message);
+      const normalized = await normalizeSpectrumMessage(space, message);
       if (!normalized) return;
-      await processMessage(normalized, text => messenger.sendText(normalized.spaceId, text));
+      await processMessage(
+        normalized,
+        text => messenger.sendText(normalized.spaceId, text),
+        (url, caption) => messenger.sendAttachment(normalized.spaceId, new URL(url), { name: caption }),
+      );
     },
   );
   response.writeHead(result.status, result.headers).end(Buffer.from(result.body));
