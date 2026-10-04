@@ -7,7 +7,7 @@ import type { Camera } from "@tempmhacks/shared";
 import { connectDb } from "@tempmhacks/shared/db";
 import { createGeminiDetector } from "./detector.js";
 import { LiveFrameSource, ReplayFrameSource, type FrameSource } from "./sources/index.js";
-import { createFrameHandler, runCamera, type DetectionStore, type Logger } from "./worker.js";
+import { createDetectionStore, createFrameHandler, runCamera, type Logger } from "./worker.js";
 
 const repositoryRoot = fileURLToPath(new URL("../../../", import.meta.url));
 for (const path of [".env", resolve(repositoryRoot, ".env")]) {
@@ -43,16 +43,7 @@ const database = await connectDb({
   token: process.env.SPACETIMEDB_TOKEN,
 });
 const { db } = database;
-const store: DetectionStore = {
-  listIncidents: () => db.incidents.list(),
-  publishObservation: observation => db.observations.publish(observation),
-  createIncident: incident => db.incidents.create(incident),
-  updateDetection: (id, confidence, lastSeenAt) => db.incidents.updateDetection(id, confidence, lastSeenAt),
-  confirmIncident: id => db.incidents.confirm(id),
-  dismissIncident: id => db.incidents.dismiss(id),
-  resolveIncident: (id, resolvedAt) => db.incidents.resolve(id, resolvedAt),
-  setCameraStatus: (id, status, lastSeenAt) => db.cameras.setStatus(id, status, lastSeenAt),
-};
+const store = createDetectionStore(database.db);
 
 function sourceFor(camera: Camera): FrameSource | undefined {
   if (!camera.streamUrl) return undefined;

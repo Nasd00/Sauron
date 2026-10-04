@@ -29,6 +29,7 @@
     "db:publish:maincloud": "npm run typecheck && spacetime publish --server maincloud --module-path spacetimedb $SPACETIMEDB_DATABASE",
     "test:integration": "tsx scripts/test-spacetimedb.ts",
     "test:mobile-e2e": "tsx scripts/test-mobile-e2e.ts",
+    "test:detection-e2e": "tsx scripts/test-detection-e2e.ts",
     "test:ios": "cd apps/ios && xcodebuild -project SauronLocation.xcodeproj -scheme SauronLocation -destination \"platform=iOS Simulator,name=${IOS_SIMULATOR:-iPhone 17}\" test",
     "test:ios-e2e": "tsx scripts/test-mobile-ios-e2e.ts",
     "demo:download-fixture": "tsx scripts/demo/download-fixture.ts",

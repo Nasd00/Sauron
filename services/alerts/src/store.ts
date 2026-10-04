@@ -1,4 +1,4 @@
-import type { Alert, Incident, MobileDevice, UserAlertProfile, Watch } from "@tempmhacks/shared";
+import type { Alert, Camera, Incident, MobileDevice, UserAlertProfile, Watch } from "@tempmhacks/shared";
 import type { Db } from "@tempmhacks/shared/db";
 import type { AlertMatcherStore, ProfileAlertMatcherStore } from "./matcher.js";
 import type { PendingAlertStore } from "./sender.js";
@@ -40,6 +40,7 @@ export function createAlertServiceStore(db: Db): AlertServiceStore {
       }
     },
     getIncident: async incidentId => db.incidents.get(incidentId),
+    getCamera: async cameraId => db.cameras.get(cameraId),
     getTarget: async targetId => {
       const profileId = parseProfileTarget(targetId);
       if (profileId !== undefined) {
@@ -94,6 +95,7 @@ export class MemoryAlertStore implements AlertServiceStore {
   readonly profiles = new Map<string, UserAlertProfile>();
   readonly devices: MobileDevice[] = [];
   readonly incidents = new Map<string, Incident>();
+  readonly cameras = new Map<string, Camera>();
   readonly alerts = new Map<string, Alert>();
   readonly contexts = new Map<string, { spaceId: string; activeIncidentId: string; alertedAt: number }>();
 
@@ -133,6 +135,10 @@ export class MemoryAlertStore implements AlertServiceStore {
 
   async getIncident(incidentId: string): Promise<Incident | undefined> {
     return this.incidents.get(incidentId);
+  }
+
+  async getCamera(cameraId: string): Promise<Camera | undefined> {
+    return this.cameras.get(cameraId);
   }
 
   async getTarget(targetId: string): Promise<AlertTarget | undefined> {

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Camera, Incident, Observation } from "@tempmhacks/shared";
+import type { Db } from "@tempmhacks/shared/db";
 import type { Detector } from "./detector.js";
 import { CameraIncidentTracker, DEFAULT_TRACKER_CONFIG, type TrackerAction, type TrackerConfig } from "./incidents.js";
 import type { FrameSource, SampledFrame } from "./sources/types.js";
@@ -16,6 +17,19 @@ export type DetectionStore = {
   resolveIncident(id: string, resolvedAt: number): Promise<void>;
   setCameraStatus(id: string, status: Camera["status"], lastSeenAt: number): Promise<void>;
 };
+
+export function createDetectionStore(db: Db): DetectionStore {
+  return {
+    listIncidents: () => db.incidents.list(),
+    publishObservation: observation => db.observations.publish(observation),
+    createIncident: incident => db.incidents.create(incident),
+    updateDetection: (id, confidence, lastSeenAt) => db.incidents.updateDetection(id, confidence, lastSeenAt),
+    confirmIncident: id => db.incidents.confirm(id),
+    dismissIncident: id => db.incidents.dismiss(id),
+    resolveIncident: (id, resolvedAt) => db.incidents.resolve(id, resolvedAt),
+    setCameraStatus: (id, status, lastSeenAt) => db.cameras.setStatus(id, status, lastSeenAt),
+  };
+}
 
 export type Logger = (event: string, fields?: Record<string, unknown>) => void;
 

@@ -1,4 +1,4 @@
-import type { Alert, Incident } from "@tempmhacks/shared";
+import type { Alert, Camera, Incident } from "@tempmhacks/shared";
 import { incidentUrl } from "@tempmhacks/shared";
 import { splitMessage } from "@tempmhacks/shared/text";
 import { haversineDistanceKm, kilometersToMiles } from "@tempmhacks/shared/geo";
@@ -7,6 +7,8 @@ import type { AlertTarget } from "./store.js";
 export interface PendingAlertStore {
   claimAlert(alertId: string): Promise<boolean>;
   getIncident(incidentId: string): Promise<Incident | undefined>;
+  /** The camera that spotted the incident, named in the alert when known. */
+  getCamera(cameraId: string): Promise<Camera | undefined>;
   /** Resolves the delivery target (watch or current-location profile) by its id. */
   getTarget(targetId: string): Promise<AlertTarget | undefined>;
   markSent(alertId: string, providerMessageId: string, sentAt: number): Promise<void>;
@@ -29,7 +31,11 @@ function formatMiles(km: number): string {
  * profiles it reports the distance from the user's shared location ("near you"); for
  * place-based watches it names the watched place. No LLM, no invented facts.
  */
-export function formatAlertMessage(incident: Incident, target: AlertTarget, baseUrl: string): string {
+const HAZARD_LABELS: Record<Incident["type"], string> = { smoke_fire: "smoke or fire" };
+
+export function formatAlertMessage(
+  incident: Incident, target: AlertTarget, baseUrl: string, camera?: Pick<Camera, "name">,
+): string {
   const distanceKm = haversineDistanceKm(
     incident.latitude, incident.longitude, target.latitude, target.longitude,
   );
@@ -38,7 +44,8 @@ export function formatAlertMessage(incident: Incident, target: AlertTarget, base
     : `Verified incident about ${formatMiles(distanceKm)} mi from your shared location.`;
   return [
     proximity,
-    `Type: ${incident.type}`,
+    `Type: ${HAZARD_LABELS[incident.type] ?? incident.type}`,
+    ...(camera ? [`Spotted by: ${camera.name}`] : []),
     `Detected: ${new Date(incident.lastSeenAt).toISOString()}`,
     "",
     "View live incident:",
@@ -69,7 +76,8 @@ export function createAlertSender(options: AlertSenderOptions) {
       ]);
       if (!incident) throw new Error(`Incident ${alert.incidentId} not found`);
       if (!target) throw new Error(`Alert target ${alert.watchId} not found`);
-      const message = formatAlertMessage(incident, target, options.publicAppUrl);
+      const camera = await options.store.getCamera(incident.cameraId).catch(() => undefined);
+      const message = formatAlertMessage(incident, target, options.publicAppUrl, camera);
       const [first, ...rest] = splitMessage(message);
       // The first chunk carries the headline facts and is the delivery of record.
       const providerMessageId = await options.messenger.send(target.spaceId, first ?? message);

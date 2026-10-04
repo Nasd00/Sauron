@@ -118,8 +118,13 @@ test("sender marks a failed delivery once and does not retry implicitly", async 
 test("watch alerts say near the place; profile alerts say near your location", () => {
   const watchText = formatAlertMessage(incident, watchTarget(watch("inside", 0)), "https://downwind.example");
   assert.match(watchText, /^Verified incident near Place inside\./);
-  assert.match(watchText, /Type: smoke_fire/);
+  assert.match(watchText, /Type: smoke or fire/);
+  assert.doesNotMatch(watchText, /Spotted by/);
   assert.match(watchText, /https:\/\/downwind\.example\/incident\/incident-1/);
+  assert.match(
+    formatAlertMessage(incident, watchTarget(watch("inside", 0)), "https://downwind.example", { name: "Ridge cam" }),
+    /Type: smoke or fire\nSpotted by: Ridge cam\n/,
+  );
 
   const profileText = formatAlertMessage(incident, profileTarget(profile("p", 0.05)), "https://downwind.example");
   assert.match(profileText, /^Verified incident about [\d.]+ mi from your shared location\./);
