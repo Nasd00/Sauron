@@ -6,6 +6,7 @@ import {
   requireCameraStatus, requireTimestamp, updateDetection, confirmIncident,
   dismissIncident, resolveIncident,
   validateWatch, validateAlertStatus, claimAlert, markAlertSent, markAlertFailed,
+  claimInbound,
 } from "./rules";
 
 export default db;
@@ -150,16 +151,8 @@ export const deactivate_watches_for_sender = db.reducer({ senderId: t.string() }
 });
 
 export const claim_inbound_message = db.reducer({ receipt: inboundReceiptInput }, (ctx, { receipt }) => {
-  if (ctx.db.inbound_receipt.messageId.find(receipt.messageId)) {
-    throw new SenderError(`Inbound message ${receipt.messageId} was already claimed`);
-  }
-  checked(() => {
-    if (!receipt.messageId.trim() || !receipt.spaceId.trim() || !receipt.senderId.trim()) {
-      throw new Error("Inbound message identity fields must not be empty");
-    }
-    requireTimestamp(receipt.receivedAt);
-    if (!receipt.contentType.trim()) throw new Error("Inbound contentType must not be empty");
-  });
+  const alreadyClaimed = ctx.db.inbound_receipt.messageId.find(receipt.messageId) !== undefined;
+  checked(() => claimInbound(receipt as InboundReceipt, alreadyClaimed));
   ctx.db.inbound_receipt.insert(receipt as InboundReceipt);
 });
 

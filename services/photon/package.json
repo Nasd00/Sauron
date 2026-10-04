@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@tempmhacks/shared": "*",
+    "@tempmhacks/messaging": "*",
     "spectrum-ts": "12.10.1"
   }
 }
