@@ -1,7 +1,8 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { MobileDevice } from "@tempmhacks/shared";
+import { hazardLabel, type IncidentView, type MobileDevice } from "@tempmhacks/shared";
 import type { Db } from "@tempmhacks/shared/db";
+import { haversineDistanceKm } from "@tempmhacks/shared/geo";
 
 /**
  * Backend for the Sauron iPhone companion app. The app's only job is to keep the
@@ -49,6 +50,57 @@ export interface MobileStore {
   checkCredential(credentialTokenHash: string, deviceId: string): Promise<void>;
   getDevice(deviceId: string): MobileDevice | undefined;
   revokeDevice(deviceId: string): Promise<void>;
+  /** Confirmed incidents, with operator reports attached. Optional so older tests keep working. */
+  listActiveIncidents?(): IncidentView[];
+  /** The location-backed profile a device updates. */
+  getProfile?(userId: string): { latitude: number; longitude: number; radiusKm: number } | undefined;
+}
+
+/** An active incident near the device, as the app shows it and notifies about it. */
+export type NearbyIncident = {
+  id: string;
+  title: string;
+  hazard: string;
+  source: "operator" | "camera";
+  details?: string;
+  latitude: number;
+  longitude: number;
+  distanceKm: number;
+  dangerRadiusKm: number;
+  insideDangerZone: boolean;
+  /** Compass direction straight away from the danger. */
+  headAway: string;
+  reportedAt: number;
+};
+
+const COMPASS = ["north", "northeast", "east", "southeast", "south", "southwest", "west", "northwest"];
+
+/**
+ * Incidents close enough to matter to someone at `at` with alert radius `radiusKm`, using the
+ * alert service's overlap rule. Nearest first.
+ */
+export function nearbyIncidents(
+  incidents: IncidentView[], at: { latitude: number; longitude: number }, radiusKm: number, cameraDangerRadiusKm: number,
+): NearbyIncident[] {
+  return incidents.flatMap(incident => {
+    const danger = incident.report?.radiusKm ?? cameraDangerRadiusKm;
+    const km = haversineDistanceKm(at.latitude, at.longitude, incident.latitude, incident.longitude);
+    if (km > radiusKm + (incident.report?.radiusKm ?? 0)) return [];
+    const dy = at.latitude - incident.latitude;
+    const dx = (at.longitude - incident.longitude) * Math.cos(incident.latitude * Math.PI / 180);
+    const bearing = (Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360;
+    return [{
+      id: incident.id,
+      title: incident.report?.title ?? hazardLabel(incident.type),
+      hazard: hazardLabel(incident.type),
+      source: incident.report ? "operator" as const : "camera" as const,
+      ...(incident.report?.description ? { details: incident.report.description } : {}),
+      latitude: incident.latitude, longitude: incident.longitude,
+      distanceKm: Math.round(km * 10) / 10, dangerRadiusKm: danger, insideDangerZone: km <= danger,
+      headAway: COMPASS[Math.round(bearing / 45) % 8]!,
+      reportedAt: incident.report?.reportedAt ?? incident.confirmedAt ?? incident.lastSeenAt,
+    }];
+  }).sort((a, b) => a.distanceKm - b.distanceKm);
 }
 
 export function createMobileStore(db: Db): MobileStore {
@@ -60,6 +112,8 @@ export function createMobileStore(db: Db): MobileStore {
     checkCredential: (hash, deviceId) => db.mobile.checkCredential(hash, deviceId),
     getDevice: deviceId => db.mobile.getDevice(deviceId),
     revokeDevice: deviceId => db.mobile.revokeDevice(deviceId),
+    listActiveIncidents: () => db.incidents.listConfirmed().map(incident => db.incidents.view(incident.id) ?? incident),
+    getProfile: userId => db.profiles.get(userId),
   };
 }
 
@@ -116,12 +170,32 @@ export type MobileApiOptions = {
   id?: () => string;
   /** Receives unexpected (non-coded) backend errors; coded errors are normal client outcomes. */
   onUnexpectedError?: (route: string, error: unknown) => void;
+  /** Danger-zone radius for camera incidents, which have no operator radius. Defaults to 3 km. */
+  dangerRadiusKm?: number;
+  /** The help agent; enables POST /api/mobile/assist. Same conversation as the person's iMessages. */
+  assistant?: {
+    reply(person: { senderId: string; spaceId: string; place?: string; location?: { latitude: number; longitude: number } }, text: string): Promise<string>;
+  };
+  clock?: () => number;
 };
+
+/** Assist messages a device may send per window, so the app can't run up the model bill. */
+const ASSIST_LIMIT = 20;
+const ASSIST_WINDOW_MS = 10 * 60_000;
+const MAX_ASSIST_TEXT = 1000;
 
 /** Transport-independent handlers for the app's JSON API. */
 export function createMobileApi(options: MobileApiOptions) {
   const id = options.id ?? randomUUID;
   const { store } = options;
+  const clock = options.clock ?? Date.now;
+  const assistUse = new Map<string, number[]>();
+  const incidentsNear = (at: { latitude: number; longitude: number } | undefined, radiusKm: number): NearbyIncident[] =>
+    at && store.listActiveIncidents ? nearbyIncidents(store.listActiveIncidents(), at, radiusKm, options.dangerRadiusKm ?? 3) : [];
+  const profileOf = (deviceId: string) => {
+    const device = store.getDevice(deviceId);
+    return device ? store.getProfile?.(device.userId) : undefined;
+  };
   const failure = (route: string, error: unknown): ApiResponse => {
     const response = errorResponse(error);
     if (response.status === 502) options.onUnexpectedError?.(route, error);
@@ -172,7 +246,8 @@ export function createMobileApi(options: MobileApiOptions) {
       } catch (error) {
         return failure("location", error);
       }
-      return { status: 200, body: { accepted: true, capturedAt } };
+      const radiusKm = profileOf(auth.deviceId)?.radiusKm ?? options.radiusKm;
+      return { status: 200, body: { accepted: true, capturedAt, incidents: incidentsNear({ latitude, longitude }, radiusKm) } };
     },
 
     /** POST /api/mobile/sharing { enabled } — the in-app Start/Stop Sharing control. */
@@ -200,7 +275,39 @@ export function createMobileApi(options: MobileApiOptions) {
         return failure("status", error);
       }
       const state = deviceState(store.getDevice(auth.deviceId));
-      return state ? { status: 200, body: state } : unauthorized;
+      if (!state) return unauthorized;
+      const profile = profileOf(auth.deviceId);
+      return { status: 200, body: { ...state, incidents: incidentsNear(profile, profile?.radiusKm ?? options.radiusKm) } };
+    },
+
+    /** POST /api/mobile/assist { text } — ask the help agent, e.g. how to get out of a danger zone. */
+    async assist(authorization: string | undefined, body: unknown): Promise<ApiResponse> {
+      const auth = bearer(authorization);
+      if (!auth) return unauthorized;
+      if (!options.assistant) return { status: 503, body: { error: "assistant_unavailable", message: "The assistant is not enabled" } };
+      const text = (body as { text?: unknown } | null)?.text;
+      if (typeof text !== "string" || !text.trim() || text.length > MAX_ASSIST_TEXT) {
+        return { status: 422, body: { error: "invalid_request", message: `text must be 1-${MAX_ASSIST_TEXT} characters` } };
+      }
+      try {
+        await store.checkCredential(hashToken(auth.token), auth.deviceId);
+      } catch (error) {
+        return failure("assist", error);
+      }
+      const device = store.getDevice(auth.deviceId);
+      if (!device) return unauthorized;
+      const now = clock();
+      const recent = (assistUse.get(device.deviceId) ?? []).filter(at => now - at < ASSIST_WINDOW_MS);
+      if (recent.length >= ASSIST_LIMIT) {
+        return { status: 429, body: { error: "rate_limited", message: "Too many messages. If you are in danger, call 911." } };
+      }
+      assistUse.set(device.deviceId, [...recent, now]);
+      const profile = store.getProfile?.(device.userId);
+      const reply = await options.assistant.reply({
+        senderId: device.senderId, spaceId: device.spaceId,
+        ...(profile ? { place: "their iPhone's live location", location: { latitude: profile.latitude, longitude: profile.longitude } } : {}),
+      }, text);
+      return { status: 200, body: { reply, incidents: incidentsNear(profile, profile?.radiusKm ?? options.radiusKm) } };
     },
 
     /** POST /admin/mobile/revoke { deviceId } — server-side revocation (admin secret required). */
@@ -323,7 +430,7 @@ export function createMobileHttpHandler(options: MobileHttpOptions) {
 
     const routes: Record<string, string[]> = {
       "/api/mobile/pair": ["POST"], "/api/mobile/location": ["POST"], "/api/mobile/sharing": ["POST"],
-      "/api/mobile/status": ["GET"], "/admin/mobile/revoke": ["POST"],
+      "/api/mobile/status": ["GET"], "/api/mobile/assist": ["POST"], "/admin/mobile/revoke": ["POST"],
     };
     const allowed = routes[path];
     if (!allowed) return false;
@@ -348,6 +455,7 @@ export function createMobileHttpHandler(options: MobileHttpOptions) {
     const result = path === "/api/mobile/pair" ? await api.pair(body.value)
       : path === "/api/mobile/location" ? await api.location(authorization, body.value)
         : path === "/api/mobile/sharing" ? await api.sharing(authorization, body.value)
+          : path === "/api/mobile/assist" ? await api.assist(authorization, body.value)
           : await api.revoke(body.value);
     // Never log tokens or coordinates; the status code and route are enough to debug.
     options.logger.info({ route: path, status: result.status, error: result.body.error }, "mobile_api");

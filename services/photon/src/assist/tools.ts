@@ -1,10 +1,25 @@
 import type { FunctionDeclaration } from "@google/genai";
-import type { Incident } from "@tempmhacks/shared";
-import { circlePolygon, distanceKm, type LatLng } from "./geo.js";
+import { hazardLabel, isManualIncident, type Incident, type IncidentReport } from "@tempmhacks/shared";
+import { circlePolygon, distanceKm, pointInPolygon, type LatLng } from "./geo.js";
 import type { Closure, RouteSummary, Router } from "./routing.js";
 import { evaluateShelter, rankDestinations, type Shelter } from "./shelters.js";
 
-export type KnownIncident = Pick<Incident, "id" | "cameraId" | "confidence" | "latitude" | "longitude"> & { confirmedAt?: number };
+export type KnownIncident = Pick<Incident, "id" | "cameraId" | "confidence" | "latitude" | "longitude">
+  & { type?: Incident["type"]; confirmedAt?: number; report?: IncidentReport };
+
+/** Routes avoid this much space around each camera-confirmed incident. */
+const ROUTE_BUFFER_M = 300;
+
+/** Radius of the area people must leave: the operator's danger zone, or the configured default. */
+export function dangerRadiusKmOf(incident: KnownIncident, defaultKm: number): number {
+  return incident.report?.radiusKm ?? defaultKm;
+}
+
+/** Short words for what and where an incident is, for prompts and tool output. */
+export function describeIncident(incident: KnownIncident): string {
+  if (incident.report) return `${incident.report.title} (${hazardLabel(incident.type ?? "other")}, reported by an operator)`;
+  return `${hazardLabel(incident.type ?? "smoke_fire")} seen by camera ${incident.cameraId}`;
+}
 
 /** Where the person is, as far as the service knows: their watched place. */
 export type PersonContext = { place?: string; location?: LatLng };
@@ -20,9 +35,25 @@ export type ToolDeps = {
   fetch?: typeof fetch;
 };
 
-/** Routes avoid this much space around each confirmed incident. */
-const ROUTE_BUFFER_M = 300;
 const MAX_ROUTED_SHELTERS = 8;
+
+/** Escape points sit this far beyond the edge of a danger zone. */
+const SAFE_MARGIN_KM = 1;
+
+function bearingDegrees(from: LatLng, to: LatLng): number {
+  const dy = to.latitude - from.latitude;
+  const dx = (to.longitude - from.longitude) * Math.cos(from.latitude * Math.PI / 180);
+  return (Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360;
+}
+
+/** The point `km` from `origin` on compass bearing `degrees` (flat-earth; fine at city scale). */
+export function offsetPoint(origin: LatLng, degrees: number, km: number): LatLng {
+  const radians = degrees * Math.PI / 180;
+  return {
+    latitude: origin.latitude + (km * Math.cos(radians)) / 111.32,
+    longitude: origin.longitude + (km * Math.sin(radians)) / (111.32 * Math.cos(origin.latitude * Math.PI / 180)),
+  };
+}
 
 const COMPASS = ["north", "northeast", "east", "southeast", "south", "southwest", "west", "northwest"];
 function direction(from: LatLng, to: LatLng): string {
@@ -54,7 +85,7 @@ const object = (properties: Record<string, unknown>, required: string[]) =>
 export const TOOL_DEFINITIONS: FunctionDeclaration[] = [
   {
     name: "get_situation",
-    description: "The person's registered place and coordinates, the current local time, and every camera-confirmed fire or smoke incident within 25 km with its distance and direction from them. Call this before giving any advice that depends on where danger is.",
+    description: "The person's registered place and coordinates, the current local time, and every active incident within 25 km: camera-confirmed fire or smoke, and dangerous events an operator reported by hand (with title, details and danger-zone radius). Includes distance, direction, and whether the person is inside the danger zone. Call this before giving any advice that depends on where danger is.",
     parametersJsonSchema: object({}, []),
   },
   {
@@ -77,6 +108,11 @@ export const TOOL_DEFINITIONS: FunctionDeclaration[] = [
     }, ["latitude", "longitude", "label"]),
   },
   {
+    name: "get_escape_route",
+    description: "The fastest way out of the danger zone the person is in or nearest to: a safe point just outside the zone in the direction away from the danger, a driving route there that avoids other danger zones, and the walking direction. Use this first when someone is inside or next to a danger zone and needs to get out.",
+    parametersJsonSchema: object({}, []),
+  },
+  {
     name: "search_places",
     description: "Find real places near the person on OpenStreetMap, e.g. \"hospital\", \"pharmacy\", \"urgent care\", \"grocery\", \"library\", \"gas station\". Returns names, addresses, coordinates and distances.",
     parametersJsonSchema: object({ query: { type: "string" } }, ["query"]),
@@ -88,9 +124,12 @@ export async function runTool(name: string, input: Record<string, unknown>, pers
   const ok = (value: Record<string, unknown>) => value;
   const fail = (message: string) => ({ error: message });
   const now = (deps.clock ?? Date.now)();
-  const closures = (): Closure[] => deps.incidents().map(i => ({
-    id: i.id, label: `the fire near camera ${i.cameraId}`, area: circlePolygon(i, ROUTE_BUFFER_M),
-  }));
+  const incidentArea = (i: KnownIncident) => i.report ? circlePolygon(i, i.report.radiusKm * 1000) : circlePolygon(i, ROUTE_BUFFER_M);
+  // A router can't start inside an excluded area, so zones the person is already in are left out:
+  // the route leads out of them, and every other zone is avoided.
+  const closures = (from?: LatLng): Closure[] => deps.incidents()
+    .map(i => ({ id: i.id, label: describeIncident(i), area: incidentArea(i) }))
+    .filter(closure => !from || !pointInPolygon(from, closure.area));
   try {
     if (name === "get_situation") {
       return ok({
@@ -103,8 +142,12 @@ export async function runTool(name: string, input: Record<string, unknown>, pers
             .filter(({ km }) => km <= 25)
             .sort((a, b) => a.km - b.km)
             .map(({ i, km }) => ({
-              type: "fire or smoke", distance_km: Math.round(km * 10) / 10, direction_from_person: direction(person.location!, i),
-              camera: i.cameraId, confidence: Math.round(i.confidence * 100) / 100,
+              type: hazardLabel(i.type ?? "smoke_fire"), distance_km: Math.round(km * 10) / 10, direction_from_person: direction(person.location!, i),
+              source: isManualIncident(i) ? "operator report" : "camera",
+              ...(i.report ? { title: i.report.title, details: i.report.description || undefined } : { camera: i.cameraId }),
+              confidence: Math.round(i.confidence * 100) / 100,
+              danger_radius_km: dangerRadiusKmOf(i, deps.dangerRadiusKm),
+              inside_danger_zone: km <= dangerRadiusKmOf(i, deps.dangerRadiusKm),
               minutes_ago: i.confirmedAt ? Math.round((now - i.confirmedAt) / 60_000) : null,
             }))
           : [],
@@ -118,8 +161,8 @@ export async function runTool(name: string, input: Record<string, unknown>, pers
       const nearest = (await deps.shelters(from))
         .sort((a, b) => distanceKm(a.location, from) - distanceKm(b.location, from))
         .slice(0, MAX_ROUTED_SHELTERS);
-      const avoid = closures();
-      const zones = deps.incidents().map(i => circlePolygon(i, deps.dangerRadiusKm * 1000));
+      const avoid = closures(from);
+      const zones = deps.incidents().map(i => circlePolygon(i, dangerRadiusKmOf(i, deps.dangerRadiusKm) * 1000));
       const routes = await Promise.all(nearest.map(s => deps.router.route({ from, to: s.location, avoid })));
       const ranked = rankDestinations(nearest.map((s, i) => evaluateShelter(s, routes[i]!, needs, zones, avoid)));
       return ok({
@@ -133,7 +176,27 @@ export async function runTool(name: string, input: Record<string, unknown>, pers
     if (name === "get_directions") {
       const to = { latitude: Number(input.latitude), longitude: Number(input.longitude) };
       if (!Number.isFinite(to.latitude) || !Number.isFinite(to.longitude)) return fail("latitude and longitude must be numbers");
-      return ok(routeSummary(await deps.router.route({ from, to, avoid: closures() })));
+      return ok(routeSummary(await deps.router.route({ from, to, avoid: closures(from) })));
+    }
+    if (name === "get_escape_route") {
+      const nearest = deps.incidents()
+        .map(i => ({ i, km: distanceKm(from, i), radius: dangerRadiusKmOf(i, deps.dangerRadiusKm) }))
+        .sort((a, b) => (a.km - a.radius) - (b.km - b.radius))[0];
+      if (!nearest || nearest.km - nearest.radius > 25) return ok({ note: "No active danger zone near the person." });
+      // Head straight away from the danger's center to just past the edge of its zone.
+      const away = nearest.km < 0.01 ? 0 : bearingDegrees(nearest.i, from);
+      const safePoint = offsetPoint(nearest.i, away, nearest.radius + SAFE_MARGIN_KM);
+      const route = await deps.router.route({ from, to: safePoint, avoid: closures(from) });
+      const inside = nearest.km <= nearest.radius;
+      return ok({
+        danger: describeIncident(nearest.i),
+        inside_danger_zone: inside,
+        distance_to_zone_edge_km: Math.round(Math.abs(nearest.radius - nearest.km) * 10) / 10,
+        head: COMPASS[Math.round(away / 45) % 8],
+        safe_point: { latitude: Math.round(safePoint.latitude * 1e5) / 1e5, longitude: Math.round(safePoint.longitude * 1e5) / 1e5 },
+        ...routeSummary(route),
+        note: inside ? "The person is inside the zone: tell them which way to go first, then the route." : undefined,
+      });
     }
     if (name === "search_places") {
       const query = String(input.query ?? "").trim();

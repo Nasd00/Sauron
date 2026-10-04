@@ -39,6 +39,10 @@ export type MobileDeviceRow = {
   trackingActive: boolean; sharingEnabled: boolean; revoked: boolean;
   pairedAt: number; updatedAt: number; lastLocationAt?: number; lastAccuracyMeters?: number;
 };
+export type IncidentReportRow = {
+  incidentId: string; title: string; description: string; radiusKm: number;
+  reportedBy: string; reportedAt: number;
+};
 
 export type RowCallback<Row> = (row: Row) => void;
 export type RowTable<Row> = {
@@ -67,6 +71,7 @@ export type GeneratedDbConnection = {
     user_alert_profile: RowTable<UserAlertProfileRow>;
     conversation_context: RowTable<ConversationContextRow>;
     mobile_device: RowTable<MobileDeviceRow>;
+    incident_report: RowTable<IncidentReportRow>;
   };
   reducers: {
     registerCamera(args: { camera: CameraRow }): Promise<void>;
@@ -98,6 +103,10 @@ export type GeneratedDbConnection = {
     mobileCheckCredential(args: { credentialTokenHash: string; deviceId: string }): Promise<void>;
     setMobileTrackingForSender(args: { senderId: string; active: boolean }): Promise<void>;
     revokeMobileDevice(args: { deviceId: string }): Promise<void>;
+    reportIncident(args: {
+      id: string; type: string; latitude: number; longitude: number; radiusKm: number;
+      title: string; description: string; reportedBy: string;
+    }): Promise<void>;
   };
   subscriptionBuilder(): GeneratedSubscriptionBuilder;
   disconnect(): void;

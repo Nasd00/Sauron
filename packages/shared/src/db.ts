@@ -1,12 +1,18 @@
 import type {
   AlertRow, CameraRow, GeneratedDbConnection, IncidentRow, ObservationRow, RowCallback,
-  WatchRow, UserAlertProfileRow, ConversationContextRow, MobileDeviceRow,
+  WatchRow, UserAlertProfileRow, ConversationContextRow, MobileDeviceRow, IncidentReportRow,
 } from "@tempmhacks/db-generated";
 import { DbConnection } from "@tempmhacks/db-generated";
 import type {
   Alert, Camera, Incident, InboundReceipt, Observation, Watch,
-  UserAlertProfile, ConversationContext, MobileDevice,
+  UserAlertProfile, ConversationContext, MobileDevice, IncidentReport, IncidentView,
 } from "./types.js";
+
+/** Body of an operator's manual report; the reducer confirms it on insert. */
+export type ReportIncidentInput = {
+  id: string; type: string; latitude: number; longitude: number; radiusKm: number;
+  title: string; description: string; reportedBy: string;
+};
 
 export type Subscription<Row> = (callback: RowCallback<Row>) => () => void;
 
@@ -65,6 +71,10 @@ function toMobileDevice(row: MobileDeviceRow): MobileDevice {
   return { ...row };
 }
 
+function toIncidentReport(row: IncidentReportRow): IncidentReport {
+  return { ...row };
+}
+
 export type Db = {
   cameras: {
     subscribe(callback: RowCallback<Camera>): () => void;
@@ -88,10 +98,21 @@ export type Db = {
     confirm(id: string): Promise<void>;
     dismiss(id: string): Promise<void>;
     resolve(id: string, resolvedAt?: number): Promise<void>;
+    /** Operator-only: create a confirmed, manually reported incident. */
+    report(input: ReportIncidentInput): Promise<void>;
+    /** The incident with its manual report, if any. */
+    view(id: string): IncidentView | undefined;
+  };
+  reports: {
+    subscribe(callback: RowCallback<IncidentReport>): () => void;
+    get(incidentId: string): IncidentReport | undefined;
+    list(): IncidentReport[];
   };
   alerts: {
     subscribe(callback: RowCallback<Alert>): () => void;
     listPending(): Alert[];
+    /** Every alert for one incident, any status. */
+    listForIncident(incidentId: string): Alert[];
     create(incidentId: string, watchId: string): Promise<void>;
     createForProfile(incidentId: string, userId: string): Promise<void>;
     claim(id: string): Promise<void>;
@@ -141,6 +162,17 @@ export type Db = {
 };
 
 export function createDb(connection: GeneratedDbConnection): Db {
+  const getIncident = (id: string): Incident | undefined => {
+    for (const row of connection.db.incident.iter()) if (row.id === id) return toIncident(row);
+    return undefined;
+  };
+  const getReport = (incidentId: string): IncidentReport | undefined => {
+    // Older deployments may not have the table yet.
+    const table = connection.db.incident_report;
+    if (!table) return undefined;
+    for (const row of table.iter()) if (row.incidentId === incidentId) return toIncidentReport(row);
+    return undefined;
+  };
   return {
     cameras: {
       subscribe: callback => subscribe(connection.db.camera)(row => callback(toCamera(row))),
@@ -169,10 +201,7 @@ export function createDb(connection: GeneratedDbConnection): Db {
     },
     incidents: {
       subscribe: callback => subscribe(connection.db.incident)(row => callback(toIncident(row))),
-      get: id => {
-        for (const row of connection.db.incident.iter()) if (row.id === id) return toIncident(row);
-        return undefined;
-      },
+      get: getIncident,
       list: () => Array.from(connection.db.incident.iter(), toIncident),
       listConfirmed: () => Array.from(connection.db.incident.iter(), toIncident)
         .filter(incident => incident.status === "confirmed"),
@@ -182,10 +211,25 @@ export function createDb(connection: GeneratedDbConnection): Db {
       confirm: id => connection.reducers.confirmIncident({ id, confirmedAt: Date.now() }),
       dismiss: id => connection.reducers.dismissIncident({ id }),
       resolve: (id, resolvedAt = Date.now()) => connection.reducers.resolveIncident({ id, resolvedAt }),
+      report: input => connection.reducers.reportIncident(input),
+      view: id => {
+        const incident = getIncident(id);
+        if (!incident) return undefined;
+        const report = getReport(id);
+        return report ? { ...incident, report } : incident;
+      },
+    },
+    reports: {
+      subscribe: callback => connection.db.incident_report
+        ? subscribe(connection.db.incident_report)(row => callback(toIncidentReport(row)))
+        : () => undefined,
+      get: getReport,
+      list: () => connection.db.incident_report ? Array.from(connection.db.incident_report.iter(), toIncidentReport) : [],
     },
     alerts: {
       subscribe: callback => subscribe(connection.db.alert)(row => callback(toAlert(row))),
       listPending: () => Array.from(connection.db.alert.iter(), toAlert).filter(alert => alert.status === "pending"),
+      listForIncident: incidentId => Array.from(connection.db.alert.iter(), toAlert).filter(alert => alert.incidentId === incidentId),
       create: (incidentId, watchId) => connection.reducers.createAlert({ incidentId, watchId }),
       createForProfile: (incidentId, userId) =>
         connection.reducers.createAlertForProfile({ incidentId, userId }),

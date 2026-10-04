@@ -44,6 +44,7 @@ import CreateMobilePairingReducer from "./create_mobile_pairing_reducer";
 import CreateWatchReducer from "./create_watch_reducer";
 import DeactivateWatchesForSenderReducer from "./deactivate_watches_for_sender_reducer";
 import DismissIncidentReducer from "./dismiss_incident_reducer";
+import GrantOperatorReducer from "./grant_operator_reducer";
 import InsertAlertReducer from "./insert_alert_reducer";
 import InsertWatchReducer from "./insert_watch_reducer";
 import MarkAlertFailedReducer from "./mark_alert_failed_reducer";
@@ -54,8 +55,10 @@ import MobileUpdateLocationReducer from "./mobile_update_location_reducer";
 import PublishObservationReducer from "./publish_observation_reducer";
 import RedeemMobilePairingReducer from "./redeem_mobile_pairing_reducer";
 import RegisterCameraReducer from "./register_camera_reducer";
+import ReportIncidentReducer from "./report_incident_reducer";
 import ResolveIncidentReducer from "./resolve_incident_reducer";
 import RevokeMobileDeviceReducer from "./revoke_mobile_device_reducer";
+import RevokeOperatorReducer from "./revoke_operator_reducer";
 import SetAlertsEnabledReducer from "./set_alerts_enabled_reducer";
 import SetCameraStatusReducer from "./set_camera_status_reducer";
 import SetMobileTrackingForSenderReducer from "./set_mobile_tracking_for_sender_reducer";
@@ -70,6 +73,7 @@ import AlertRow from "./alert_table";
 import CameraRow from "./camera_table";
 import ConversationContextRow from "./conversation_context_table";
 import IncidentRow from "./incident_table";
+import IncidentReportRow from "./incident_report_table";
 import MobileDeviceRow from "./mobile_device_table";
 import ObservationRow from "./observation_table";
 import UserAlertProfileRow from "./user_alert_profile_table";
@@ -132,6 +136,17 @@ const tablesSchema = __schema({
       { name: 'incident_id_key', constraint: 'unique', columns: ['id'] },
     ],
   }, IncidentRow),
+  incidentReport: __table({
+    name: 'incident_report',
+    indexes: [
+      { accessor: 'incidentId', name: 'incident_report_incident_id_idx_btree', algorithm: 'btree', columns: [
+        'incidentId',
+      ] },
+    ],
+    constraints: [
+      { name: 'incident_report_incident_id_key', constraint: 'unique', columns: ['incidentId'] },
+    ],
+  }, IncidentReportRow),
   mobileDevice: __table({
     name: 'mobile_device',
     indexes: [
@@ -210,6 +225,7 @@ const reducersSchema = __reducers(
   __reducerSchema("create_watch", CreateWatchReducer),
   __reducerSchema("deactivate_watches_for_sender", DeactivateWatchesForSenderReducer),
   __reducerSchema("dismiss_incident", DismissIncidentReducer),
+  __reducerSchema("grant_operator", GrantOperatorReducer),
   __reducerSchema("insert_alert", InsertAlertReducer),
   __reducerSchema("insert_watch", InsertWatchReducer),
   __reducerSchema("mark_alert_failed", MarkAlertFailedReducer),
@@ -220,8 +236,10 @@ const reducersSchema = __reducers(
   __reducerSchema("publish_observation", PublishObservationReducer),
   __reducerSchema("redeem_mobile_pairing", RedeemMobilePairingReducer),
   __reducerSchema("register_camera", RegisterCameraReducer),
+  __reducerSchema("report_incident", ReportIncidentReducer),
   __reducerSchema("resolve_incident", ResolveIncidentReducer),
   __reducerSchema("revoke_mobile_device", RevokeMobileDeviceReducer),
+  __reducerSchema("revoke_operator", RevokeOperatorReducer),
   __reducerSchema("set_alerts_enabled", SetAlertsEnabledReducer),
   __reducerSchema("set_camera_status", SetCameraStatusReducer),
   __reducerSchema("set_mobile_tracking_for_sender", SetMobileTrackingForSenderReducer),
@@ -238,6 +256,8 @@ type __SchemaWithTableAccessorAliases = Omit<typeof tablesSchema.schemaType, "ta
   tables: typeof tablesSchema.schemaType.tables & {
     /** @deprecated Use `conversationContext` instead. This alias will be removed in the next major version. */
     readonly "conversation_context": Omit<typeof tablesSchema.schemaType.tables["conversationContext"], "accessorName"> & { readonly accessorName: "conversation_context" };
+    /** @deprecated Use `incidentReport` instead. This alias will be removed in the next major version. */
+    readonly "incident_report": Omit<typeof tablesSchema.schemaType.tables["incidentReport"], "accessorName"> & { readonly accessorName: "incident_report" };
     /** @deprecated Use `mobileDevice` instead. This alias will be removed in the next major version. */
     readonly "mobile_device": Omit<typeof tablesSchema.schemaType.tables["mobileDevice"], "accessorName"> & { readonly accessorName: "mobile_device" };
     /** @deprecated Use `userAlertProfile` instead. This alias will be removed in the next major version. */
@@ -261,6 +281,7 @@ const REMOTE_MODULE = {
 
 const tableAccessorAliases = {
   "conversation_context": "conversationContext",
+  "incident_report": "incidentReport",
   "mobile_device": "mobileDevice",
   "user_alert_profile": "userAlertProfile",
 } as const;
@@ -285,6 +306,8 @@ type __DbViewBase = __DbConnectionImpl<typeof REMOTE_MODULE>["db"];
 export type DbView = __DbViewBase & {
   /** @deprecated Use `conversationContext` instead. This alias will be removed in the next major version. */
   readonly "conversation_context": __DbViewBase["conversationContext"];
+  /** @deprecated Use `incidentReport` instead. This alias will be removed in the next major version. */
+  readonly "incident_report": __DbViewBase["incidentReport"];
   /** @deprecated Use `mobileDevice` instead. This alias will be removed in the next major version. */
   readonly "mobile_device": __DbViewBase["mobileDevice"];
   /** @deprecated Use `userAlertProfile` instead. This alias will be removed in the next major version. */
@@ -295,6 +318,8 @@ type __TablesBase = __QueryBuilder<typeof tablesSchema.schemaType>;
 export type Tables = __TablesBase & {
   /** @deprecated Use `conversationContext` instead. This alias will be removed in the next major version. */
   readonly "conversation_context": __TablesBase["conversationContext"];
+  /** @deprecated Use `incidentReport` instead. This alias will be removed in the next major version. */
+  readonly "incident_report": __TablesBase["incidentReport"];
   /** @deprecated Use `mobileDevice` instead. This alias will be removed in the next major version. */
   readonly "mobile_device": __TablesBase["mobileDevice"];
   /** @deprecated Use `userAlertProfile` instead. This alias will be removed in the next major version. */

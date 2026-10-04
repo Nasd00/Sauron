@@ -1,4 +1,9 @@
-import type { Alert, Camera, Incident, InboundReceipt, Observation, Watch, UserAlertProfile, ConversationContext, MobileDevice } from "@tempmhacks/shared";
+import type { Alert, Camera, Incident, IncidentHazard, IncidentReport, InboundReceipt, Observation, Watch, UserAlertProfile, ConversationContext, MobileDevice } from "@tempmhacks/shared";
+
+// Mirrors MANUAL_CAMERA_ID / REPORTABLE_HAZARDS in @tempmhacks/shared; the module only imports types
+// from shared, and tests pin the two together.
+export const MANUAL_CAMERA_ID = "manual";
+export const REPORTABLE_HAZARDS: readonly IncidentHazard[] = ["fire", "smoke_fire", "flood", "gas_leak", "chemical", "violence", "other"];
 
 export function requireConfidence(confidence: number): void {
   if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
@@ -78,6 +83,47 @@ export function validateObservation(observation: Observation): void {
   requireHazard(observation.type);
   requireConfidence(observation.confidence);
   requireTimestamp(observation.timestamp);
+}
+
+export const MIN_REPORT_RADIUS_KM = 0.1;
+export const MAX_REPORT_RADIUS_KM = 100;
+
+export type ManualReportInput = {
+  id: string; type: string; latitude: number; longitude: number;
+  radiusKm: number; title: string; description: string; reportedBy: string;
+};
+
+/**
+ * Builds the confirmed incident and its report for an operator's manual report. Manual reports
+ * are confirmed on creation so the existing alert pipeline delivers them immediately.
+ */
+export function newManualIncident(input: ManualReportInput, now: number): { incident: Incident; report: IncidentReport } {
+  if (!input.id.trim()) throw new Error("Incident id must not be empty");
+  if (!(REPORTABLE_HAZARDS as readonly string[]).includes(input.type)) {
+    throw new Error(`Hazard must be one of ${REPORTABLE_HAZARDS.join(", ")}`);
+  }
+  if (!Number.isFinite(input.latitude) || input.latitude < -90 || input.latitude > 90
+    || !Number.isFinite(input.longitude) || input.longitude < -180 || input.longitude > 180) {
+    throw new Error("Report latitude and longitude must be valid coordinates");
+  }
+  if (!Number.isFinite(input.radiusKm) || input.radiusKm < MIN_REPORT_RADIUS_KM || input.radiusKm > MAX_REPORT_RADIUS_KM) {
+    throw new Error(`Report radiusKm must be between ${MIN_REPORT_RADIUS_KM} and ${MAX_REPORT_RADIUS_KM}`);
+  }
+  const title = input.title.trim().replace(/\s+/g, " ");
+  if (!title || title.length > 120) throw new Error("Report title must be 1-120 characters");
+  const description = input.description.trim();
+  if (description.length > 1000) throw new Error("Report description must be at most 1000 characters");
+  requireTimestamp(now);
+  const incident: Incident = {
+    id: input.id, cameraId: MANUAL_CAMERA_ID, type: input.type as IncidentHazard, status: "confirmed",
+    confidence: 1, latitude: input.latitude, longitude: input.longitude,
+    firstSeenAt: now, lastSeenAt: now, confirmedAt: now,
+  };
+  const report: IncidentReport = {
+    incidentId: input.id, title, description, radiusKm: input.radiusKm,
+    reportedBy: input.reportedBy.trim().slice(0, 80) || "operator", reportedAt: now,
+  };
+  return { incident, report };
 }
 
 export function validateNewIncident(incident: Incident): void {

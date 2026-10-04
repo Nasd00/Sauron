@@ -1,5 +1,9 @@
 import * as Cesium from "cesium";
 import type { Camera, Incident } from "@tempmhacks/shared";
+import { hazardLabel } from "@tempmhacks/shared";
+import { dangerRadiusKm } from "./danger";
+import { mountReportEvent } from "./report-event";
+import { mountIrisSafety } from "./iris-safety";
 import { LiveState } from "./live-state";
 import { connectSpacetime } from "./spacetime";
 import { mountBroadcastUi } from "./broadcast-ui";
@@ -61,15 +65,28 @@ export function mountSauron(components: Components): () => void {
     if (!selected) return;
     const row = selected.kind === "camera" ? state.cameras.get(selected.id) : state.incidents.get(selected.id);
     if (!row) { selected = undefined; return; }
+    const report = "cameraId" in row ? state.reports.get(row.id) : undefined;
     const heading = document.createElement("h3");
-    heading.textContent = "name" in row ? row.name : "Smoke / Fire";
+    if (report) {
+      const badge = document.createElement("span"); badge.className = "sauron-badge"; badge.textContent = "MANUAL";
+      heading.append(badge, report.title);
+    } else heading.textContent = "name" in row ? row.name : hazardLabel(row.type);
     const meta = document.createElement("p");
     meta.textContent = `${row.status.toUpperCase()} · ${row.latitude.toFixed(4)}, ${row.longitude.toFixed(4)}`;
     const close = document.createElement("button"); close.textContent = "Close";
     close.onclick = () => { selected = undefined; renderDetail(); };
     detail.append(heading, meta, close);
-    const camera = "cameraId" in row ? state.cameras.get(row.cameraId) : row;
-    const observation = state.latestEvidence(camera?.id ?? ("cameraId" in row ? row.cameraId : row.id));
+    if (report) {
+      const what = document.createElement("p");
+      what.textContent = `${hazardLabel((row as Incident).type)} · danger zone ${report.radiusKm} km · reported by ${report.reportedBy} ${new Date(report.reportedAt).toLocaleString()}`;
+      detail.append(what);
+      if (report.description) {
+        const details = document.createElement("p"); details.className = "sauron-report-details"; details.textContent = report.description;
+        detail.append(details);
+      }
+    }
+    const camera = "cameraId" in row ? (report ? undefined : state.cameras.get(row.cameraId)) : row;
+    const observation = report ? undefined : state.latestEvidence(camera?.id ?? ("cameraId" in row ? row.cameraId : row.id));
     if (observation) {
       const url = safeUrl(observation.evidenceUrl);
       if (url) { const image = document.createElement("img"); image.src = url; image.alt = `Latest evidence from ${camera?.name ?? "camera"}`; detail.append(image); }
@@ -80,7 +97,7 @@ export function mountSauron(components: Components): () => void {
       if (url) { const link = document.createElement("a"); link.href = url; link.target = "_blank"; link.rel = "noopener noreferrer"; link.textContent = "Open registered camera source"; detail.append(link); }
     }
     if ("confidence" in row) {
-      const confidence = document.createElement("p"); confidence.textContent = `${Math.round(row.confidence * 100)}% confidence · ${camera?.name ?? row.cameraId}`; detail.append(confidence);
+      if (!report) { const confidence = document.createElement("p"); confidence.textContent = `${Math.round(row.confidence * 100)}% confidence · ${camera?.name ?? row.cameraId}`; detail.append(confidence); }
       const actions = row.status === "candidate" ? ["confirm", "dismiss"] as const : row.status === "confirmed" ? ["resolve"] as const : [];
       for (const action of actions) {
         const button = document.createElement("button"); button.textContent = action.toUpperCase(); button.disabled = pending;
@@ -107,11 +124,30 @@ export function mountSauron(components: Components): () => void {
       entity.show = show;
     }
     for (const row of state.cameras.values()) marker("camera", row, row.status === "online" ? "#f2f1ec" : "#687480", camerasVisible);
-    for (const row of state.activeIncidents()) marker("incident", row, row.status === "confirmed" ? "#ff635d" : "#ffc56a", incidentsVisible);
+    for (const row of state.activeIncidents()) {
+      const report = state.reports.get(row.id);
+      marker("incident", row, report ? "#ff2d55" : row.status === "confirmed" ? "#ff635d" : "#ffc56a", incidentsVisible);
+      if (report) source.entities.getById(`sauron:incident:${row.id}`)!.name = `${report.title} · ${row.status}`;
+      // Danger zones: operator reports draw their own radius, so people can see what to avoid.
+      if (row.status !== "confirmed" || !report) continue;
+      const id = `sauron:zone:${row.id}`; desired.add(id);
+      const zone = source.entities.getById(id) ?? source.entities.add({ id, properties: { sauronKind: "incident", sauronId: row.id } });
+      const meters = dangerRadiusKm({ ...row, report }) * 1000;
+      zone.position = new Cesium.ConstantPositionProperty(Cesium.Cartesian3.fromDegrees(row.longitude, row.latitude));
+      zone.ellipse = new Cesium.EllipseGraphics({ semiMajorAxis: meters, semiMinorAxis: meters,
+        material: Cesium.Color.fromCssColorString("#ff2d55").withAlpha(0.16), outline: true,
+        outlineColor: Cesium.Color.fromCssColorString("#ff2d55").withAlpha(0.95), outlineWidth: 2,
+        height: 0, heightReference: Cesium.HeightReference.CLAMP_TO_GROUND });
+      zone.show = incidentsVisible;
+    }
     for (const entity of [...source.entities.values]) if (!desired.has(entity.id)) source.entities.remove(entity);
     const feed = element(".sauron-feed"); feed.replaceChildren();
     for (const row of state.activeIncidents()) {
-      const button = document.createElement("button"); button.textContent = `${row.status.toUpperCase()} · ${state.cameras.get(row.cameraId)?.name ?? row.cameraId}`;
+      const report = state.reports.get(row.id);
+      const button = document.createElement("button");
+      button.textContent = report
+        ? `MANUAL · ${row.status.toUpperCase()} · ${report.title}`
+        : `${row.status.toUpperCase()} · ${state.cameras.get(row.cameraId)?.name ?? row.cameraId}`;
       button.onclick = () => select("incident", row.id); feed.append(button);
     }
     if (!feed.childElementCount) feed.textContent = "No active incidents detected.";
@@ -142,6 +178,8 @@ export function mountSauron(components: Components): () => void {
   reconcile();
   const disposeBroadcastUi = mountBroadcastUi();
   const disposeWatchAreas = mountWatchAreas(viewer, state, connection.db, navigation);
+  const disposeReportEvent = mountReportEvent(viewer, state);
+  const disposeIrisSafety = mountIrisSafety(viewer, state);
   return () => { alive = false; unsubscribe(); connection.disconnect(); handler.destroy();
-    viewer.dataSources.remove(source, true); panel.remove(); disposeBroadcastUi(); disposeWatchAreas(); };
+    viewer.dataSources.remove(source, true); panel.remove(); disposeBroadcastUi(); disposeWatchAreas(); disposeReportEvent(); disposeIrisSafety(); };
 }

@@ -9,6 +9,7 @@ import {
   validateInboundReceipt,
   validateUserAlertProfile, validateConversationContext,
   requireTokenHash, newMobilePairing, requireRedeemablePairing, requireUploadingDevice, applyMobileLocation,
+  newManualIncident,
 } from "./rules";
 
 export default db;
@@ -403,6 +404,53 @@ function requireOwner(ctx: Context): void {
     throw new SenderError("Only the database owner may insert schema fixtures");
   }
 }
+
+/** The owner, or an identity the owner granted with grant_operator (e.g. Photon's token). */
+function requireOperator(ctx: Context): void {
+  if (ctx.db.module_config.ownerIdentity.find(ctx.sender)) return;
+  const sender = ctx.sender.toHexString().toLowerCase();
+  // Private-table scan, matching the inbound_receipt workaround above.
+  for (const operator of ctx.db.operator.iter()) {
+    if (operator.identityHex === sender) return;
+  }
+  throw new SenderError("operator_required: only the owner or a granted operator may report incidents");
+}
+
+function normalizeIdentityHex(value: string): string {
+  const hex = value.trim().toLowerCase().replace(/^0x/, "");
+  if (!/^[0-9a-f]{64}$/.test(hex)) throw new SenderError("Identity must be 64 hex characters");
+  return hex;
+}
+
+export const grant_operator = db.reducer({ identityHex: t.string() }, (ctx, { identityHex }) => {
+  requireOwner(ctx);
+  const hex = normalizeIdentityHex(identityHex);
+  for (const operator of ctx.db.operator.iter()) if (operator.identityHex === hex) return;
+  ctx.db.operator.insert({ identityHex: hex, grantedAt: Date.now() });
+});
+
+export const revoke_operator = db.reducer({ identityHex: t.string() }, (ctx, { identityHex }) => {
+  requireOwner(ctx);
+  const hex = normalizeIdentityHex(identityHex);
+  for (const operator of ctx.db.operator.iter()) {
+    if (operator.identityHex === hex) ctx.db.operator.identityHex.delete(operator.identityHex);
+  }
+});
+
+// A person marked a dangerous area by hand. The incident is confirmed on insert, so the alert
+// pipeline and help agents pick it up exactly like a camera-confirmed incident.
+export const report_incident = db.reducer(
+  {
+    id: t.string(), type: t.string(), latitude: t.f64(), longitude: t.f64(), radiusKm: t.f64(),
+    title: t.string(), description: t.string(), reportedBy: t.string(),
+  },
+  (ctx, input) => {
+    requireOperator(ctx);
+    if (ctx.db.incident.id.find(input.id)) throw new SenderError(`Incident ${input.id} already exists`);
+    const { incident, report } = checked(() => newManualIncident(input, Date.now()));
+    ctx.db.incident.insert(storedIncident(incident));
+    ctx.db.incident_report.insert(report);
+  });
 
 export const insert_watch = db.reducer({ watch: watchInput }, (ctx, { watch }) => {
   requireOwner(ctx);

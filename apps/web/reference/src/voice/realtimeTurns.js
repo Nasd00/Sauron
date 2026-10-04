@@ -67,10 +67,14 @@ export class RealtimeTurns {
    * next turn and can confirm or correct without talking over the user. The
    * payload is serialized JSON, so place names stay structured DATA (the same
    * injection hygiene as failedLabels), never instruction-bearing prose.
+   *
+   * `respond: true` asks for a spoken answer right away (deferred, never
+   * overlapping, if a response is in flight) — for urgent events such as a
+   * danger reported near the operator.
    */
-  notifyMapEvent(payload) {
+  notifyMapEvent(payload, { respond = false } = {}) {
     if (!this.dc || this.dc.readyState !== 'open') return false;
-    return this.sendRealtimeEvent(
+    const sent = this.sendRealtimeEvent(
       {
         type: 'conversation.item.create',
         item: {
@@ -81,6 +85,8 @@ export class RealtimeTurns {
       },
       'client.map_event',
     );
+    if (sent && respond) this.requestUserTextResponse();
+    return sent;
   }
 
   sendTextCommand(text) {

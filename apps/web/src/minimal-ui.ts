@@ -52,7 +52,7 @@ export function mountMinimalUi(): () => void {
       <h2 id="minimal-help-title">Explore freely.</h2>
       <p>Drag to pan. Scroll or pinch to zoom. Right-drag to tilt and rotate.</p>
       <p>Search for a place above. Use the existing globe, north, and tilt controls to orient your view.</p>
-      <p>Open Cameras for CCTV feeds and camera projection. Open Activity for monitored cameras, evidence, and incident actions.</p>
+      <p>Open Cameras for CCTV feeds and camera projection. Open Activity for monitored cameras, evidence, and incident actions. Use Report event to mark a dangerous area and alert phones inside it.</p>
       <p>Visual presets and Display keep the original map effects available. Press 1 to return to Normal.</p>
       <form method="dialog"><button>Close</button></form>
     </dialog>`;
@@ -110,6 +110,14 @@ export function mountMinimalUi(): () => void {
     watchToggle.before(placeholder);
     helpButton.before(watchToggle);
     moved.push({ element: watchToggle, placeholder });
+  }
+  // "Report event" sits beside "Watch area": mark a dangerous area and alert phones in it.
+  const reportToggle = document.querySelector<HTMLButtonElement>('.report-toggle');
+  if (reportToggle && helpButton) {
+    const placeholder = document.createComment('Original position: .report-toggle');
+    reportToggle.before(placeholder);
+    helpButton.before(reportToggle);
+    moved.push({ element: reportToggle, placeholder });
   }
   // Left toolbar: wipe every drawing on the globe (voice annotations and
   // hand-drawn marks share one board, so one clear covers both).

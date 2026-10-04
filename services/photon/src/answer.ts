@@ -1,5 +1,5 @@
-import type { Camera, Incident, Observation, UserAlertProfile } from "@tempmhacks/shared";
-import { incidentUrl } from "@tempmhacks/shared";
+import type { Camera, Incident, IncidentReport, Observation, UserAlertProfile } from "@tempmhacks/shared";
+import { hazardLabel, incidentUrl } from "@tempmhacks/shared";
 import {
   evaluateProfileFreshness, haversineDistanceKm, kilometersToMiles,
 } from "@tempmhacks/shared/geo";
@@ -46,6 +46,8 @@ export function classifyFollowUp(text: string): FollowUpIntent | undefined {
 
 export type GroundedContext = {
   incident: Incident;
+  /** An operator's report, for manually reported incidents. */
+  report?: IncidentReport;
   camera?: Camera;
   /** Latest observation for the incident's camera, if known. */
   latestObservation?: Observation;
@@ -67,7 +69,7 @@ const STATUS_LABEL: Record<Incident["status"], string> = {
 };
 
 function describeType(type: string): string {
-  return type === "smoke_fire" ? "possible smoke/fire" : type;
+  return type === "smoke_fire" ? "possible smoke/fire" : hazardLabel(type);
 }
 
 function formatMiles(km: number): string {
@@ -98,8 +100,35 @@ export function answerFollowUp(
   intent: FollowUpIntent,
   context: GroundedContext,
 ): { text: string; sendEvidence: boolean; evidenceUrl?: string; cameraId?: string } {
-  const { incident, camera } = context;
+  const { incident, camera, report } = context;
   const link = incidentUrl(context.baseUrl, incident.id);
+  if (report) {
+    const zone = `The danger zone is ${formatMiles(report.radiusKm)} mi around the reported spot.`;
+    if (intent === "what_happened" || intent === "what_changed") {
+      return {
+        text: [
+          `${report.title}: ${describeType(incident.type)} reported by an operator, ${STATUS_LABEL[incident.status]}.`,
+          report.description || undefined, zone, distanceSentence(context), `View live: ${link}`,
+        ].filter((value): value is string => !!value).join("\n"),
+        sendEvidence: false,
+      };
+    }
+    if (intent === "where") {
+      return {
+        text: [
+          `It was reported at ${incident.latitude.toFixed(4)}, ${incident.longitude.toFixed(4)}.`, zone,
+          distanceSentence(context), `View on the map: ${link}`,
+        ].filter((v): v is string => v !== undefined).join("\n"),
+        sendEvidence: false,
+      };
+    }
+    if (intent === "which_camera" || intent === "show_me") {
+      return { text: `This was reported by an operator, not seen by a camera, so there is no camera image. Map: ${link}`, sendEvidence: false };
+    }
+    if (intent === "when") {
+      return { text: `Reported ${new Date(report.reportedAt).toISOString()}.`, sendEvidence: false };
+    }
+  }
 
   switch (intent) {
     case "what_happened": {

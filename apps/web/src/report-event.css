@@ -1,0 +1,16 @@
+/* The toggle is relocated into the header by minimal-ui and inherits its button style. The form
+   reuses the watch-area form styles; only report-specific accents live here. */
+.report-ui { position: fixed; right: 20px; top: 70px; z-index: 131; font: 11px "JetBrains Mono", monospace; }
+body.clean-view .report-ui { display: none; }
+.report-toggle.active, .report-toggle[aria-pressed="true"] { color: #ff2d55 !important; border-color: #ff2d55 !important; }
+.report-form { border-top: 2px solid #ff2d55; }
+.report-form .watch-form-head strong { color: #ff6b81; }
+.report-textarea { resize: vertical; min-height: 54px; }
+.report-reach { margin: 10px 0 0; color: #f2f1ec; font-size: 11px; }
+.report-send { color: #fff !important; background: #d61f45 !important; border-color: #d61f45 !important; }
+.report-send:hover { background: #ff2d55 !important; }
+@media (max-width: 600px) { .report-ui { right: 8px; top: 64px; } }
+
+/* Activity panel: manually reported incidents. */
+.sauron-badge { display: inline-block; margin-right: 6px; padding: 1px 5px; color: #fff; background: #d61f45; font-size: 9px; letter-spacing: .12em; vertical-align: 1px; }
+.sauron-report-details { white-space: pre-wrap; }

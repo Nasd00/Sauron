@@ -5,7 +5,7 @@ import { imessage } from "@spectrum-ts/imessage";
 import { connectDb } from "@tempmhacks/shared/db";
 import { createImessageMessenger } from "@tempmhacks/messaging";
 import { startAlertPipeline } from "./pipeline.js";
-import { createAlertSender } from "./sender.js";
+import { createAlertSender, createAllClearSender } from "./sender.js";
 import { createAlertServiceStore } from "./store.js";
 
 for (const path of [".env", fileURLToPath(new URL("../../../.env", import.meta.url))]) {
@@ -44,7 +44,12 @@ const sendAlert = createAlertSender({
   },
 });
 
-startAlertPipeline({ db: database.db, store, sendAlert });
+startAlertPipeline({
+  db: database.db, store, sendAlert,
+  sendAllClear: createAllClearSender({
+    store, messenger: { send: (spaceId, text) => imessageMessenger.sendText(spaceId, text) },
+  }),
+});
 
 console.info(JSON.stringify({ level: "info", message: "alert_service_started" }));
 

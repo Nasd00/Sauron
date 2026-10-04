@@ -31,10 +31,58 @@ export async function enrollPhone(
   return { ok: true, phone: body.phone ?? request.phone };
 }
 
+export type ReportRequest = {
+  type: string; latitude: number; longitude: number; radiusKm: number; title: string; description: string;
+};
+
+export type ReportResult =
+  | { ok: true; incidentId: string }
+  | { ok: false; reason: "unauthorized" | "rejected" | "unreachable"; message: string };
+
+async function postAdmin(
+  baseUrl: string, secret: string, path: string, body: unknown, doFetch: typeof fetch,
+): Promise<{ ok: true; body: Record<string, unknown> } | { ok: false; reason: "unauthorized" | "rejected" | "unreachable"; message: string }> {
+  let response: Response;
+  try {
+    response = await doFetch(new URL(path, baseUrl), {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${secret}` },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    return { ok: false, reason: "unreachable", message: "Couldn't reach the alert service. Check VITE_PHOTON_URL and that Photon is running." };
+  }
+  if (response.status === 401) return { ok: false, reason: "unauthorized", message: "That operator key was rejected." };
+  const parsed = await response.json().catch(() => ({})) as Record<string, unknown>;
+  if (!response.ok) return { ok: false, reason: "rejected", message: typeof parsed.error === "string" ? parsed.error : `Request failed (HTTP ${response.status}).` };
+  return { ok: true, body: parsed };
+}
+
+/**
+ * Reports a dangerous event at a point. Photon creates a confirmed incident with this danger zone,
+ * which alerts every phone in or near it and has the help agent offer a way out.
+ */
+export async function reportIncident(
+  baseUrl: string, secret: string, request: ReportRequest, doFetch: typeof fetch = fetch,
+): Promise<ReportResult> {
+  const result = await postAdmin(baseUrl, secret, "/admin/incidents", { ...request, reportedBy: "web operator" }, doFetch);
+  if (!result.ok) return result;
+  const incident = result.body.incident as { id?: string } | undefined;
+  return { ok: true, incidentId: incident?.id ?? "" };
+}
+
+/** Ends an incident; everyone who was alerted gets an all-clear text. */
+export async function resolveIncidentViaPhoton(
+  baseUrl: string, secret: string, incidentId: string, doFetch: typeof fetch = fetch,
+): Promise<{ ok: true } | { ok: false; reason: "unauthorized" | "rejected" | "unreachable"; message: string }> {
+  const result = await postAdmin(baseUrl, secret, "/admin/incidents/resolve", { id: incidentId }, doFetch);
+  return result.ok ? { ok: true } : result;
+}
+
 const SECRET_KEY = "photon-admin-secret";
 
 /** The operator's Photon admin key for this browser tab. Never bundled into the app. */
-export function operatorSecret(ask: () => string | null = () => window.prompt("Operator key (PHOTON_ADMIN_SECRET) to enroll phones:")): string | undefined {
+export function operatorSecret(ask: () => string | null = () => window.prompt("Operator key (PHOTON_ADMIN_SECRET):")): string | undefined {
   try {
     const stored = sessionStorage.getItem(SECRET_KEY);
     if (stored) return stored;

@@ -3,6 +3,7 @@ import type { Watch } from "@tempmhacks/shared";
 import type { Db } from "@tempmhacks/shared/db";
 import { LiveState } from "./live-state";
 import { E164, enrollPhone, forgetOperatorSecret, operatorSecret } from "./photon-client";
+import { pickLonLat } from "./globe-pick";
 import "./watch-areas.css";
 
 type Navigation = { runImmediateNavigation(noun: string, navigate: () => void): void };
@@ -247,34 +248,10 @@ export function mountWatchAreas(
   }
 
   // ---- Map click to place --------------------------------------------------
-  function pickLonLat(position: Cesium.Cartesian2): { lon: number; lat: number } | undefined {
-    const scene = viewer.scene;
-    let cartesian: Cesium.Cartesian3 | undefined;
-    // 1) Terrain/globe surface under the cursor (most accurate with a depth buffer).
-    const ray = viewer.camera.getPickRay(position);
-    if (ray) cartesian = scene.globe.pick(ray, scene) ?? undefined;
-    // 2) Scene depth (works over 3D tiles / photorealistic buildings).
-    if (!cartesian && scene.pickPositionSupported) {
-      cartesian = scene.pickPosition(position) ?? undefined;
-    }
-    // 3) Ellipsoid intersection — always available, needs no depth buffer, so it
-    //    is the reliable fallback (empty-space clicks, headless, globe hidden).
-    if (!cartesian) {
-      cartesian = viewer.camera.pickEllipsoid(position, scene.globe.ellipsoid) ?? undefined;
-    }
-    if (!cartesian) return;
-    const carto = Cesium.Cartographic.fromCartesian(cartesian);
-    if (!carto) return;
-    return {
-      lon: Cesium.Math.toDegrees(carto.longitude),
-      lat: Cesium.Math.toDegrees(carto.latitude),
-    };
-  }
-
   const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
   handler.setInputAction((event: { position: Cesium.Cartesian2 }) => {
     if (!placing) return;
-    const point = pickLonLat(event.position);
+    const point = pickLonLat(viewer, event.position);
     if (!point) return;
     draft = {
       longitude: point.lon,

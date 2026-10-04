@@ -1,5 +1,5 @@
 import type {
-  Camera, ConversationContext, Incident, MobileDevice, Observation, UserAlertProfile, Watch,
+  Camera, ConversationContext, Incident, IncidentView, MobileDevice, Observation, UserAlertProfile, Watch,
 } from "@tempmhacks/shared";
 
 export type InboundMessage = {
@@ -40,7 +40,8 @@ export interface MessagingStore {
   upsertConversationContext(context: ConversationContext): Promise<void>;
   /** Clears the active-incident anchor for a conversation (used on STOP/re-enroll). */
   clearConversationContext(spaceId: string): Promise<void>;
-  getIncident(incidentId: string): Promise<Incident | undefined>;
+  /** The incident with its operator report, if it was reported by hand. */
+  getIncident(incidentId: string): Promise<IncidentView | undefined>;
   getCamera(cameraId: string): Promise<Camera | undefined>;
   getLatestObservation(cameraId: string): Promise<Observation | undefined>;
   countOtherNearbyCameras(cameraId: string, latitude: number, longitude: number, radiusKm: number): Promise<number>;

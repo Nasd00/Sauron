@@ -1,4 +1,4 @@
-import type { Camera, Incident, Observation, Watch } from "@tempmhacks/shared";
+import type { Camera, Incident, IncidentReport, Observation, UserAlertProfile, Watch } from "@tempmhacks/shared";
 import { createDb } from "@tempmhacks/shared/db";
 import { DbConnection } from "./module_bindings";
 import { LiveState } from "./live-state";
@@ -17,7 +17,7 @@ export function connectSpacetime(state: LiveState, status: (message: string) => 
       try { localStorage.setItem(tokenKey, issuedToken); } catch { /* storage may be disabled */ }
       conn.subscriptionBuilder().onApplied(() => status("SpaceTimeDB · live"))
         .onError(() => status("SpaceTimeDB subscription failed"))
-        .subscribe(["SELECT * FROM camera", "SELECT * FROM incident", "SELECT * FROM observation", "SELECT * FROM watch", "SELECT * FROM alert", "SELECT * FROM user_alert_profile", "SELECT * FROM conversation_context"]);
+        .subscribe(["SELECT * FROM camera", "SELECT * FROM incident", "SELECT * FROM observation", "SELECT * FROM watch", "SELECT * FROM alert", "SELECT * FROM user_alert_profile", "SELECT * FROM conversation_context", "SELECT * FROM incident_report"]);
     })
     .onConnectError(() => status("SpaceTimeDB unavailable · check server and database"))
     .onDisconnect(() => { if (!disposed) status("SpaceTimeDB disconnected"); })
@@ -39,6 +39,15 @@ export function connectSpacetime(state: LiveState, status: (message: string) => 
   connection.db.watch.onInsert(watchInsert);
   connection.db.watch.onUpdate((ctx, _old, row) => watchInsert(ctx, row));
   connection.db.watch.onDelete((_ctx, row) => state.update("watches", row as Watch, true));
+
+  const reportInsert = (_ctx: unknown, row: IncidentReport) => state.update("reports", row);
+  connection.db.incident_report.onInsert(reportInsert);
+  connection.db.incident_report.onUpdate((ctx, _old, row) => reportInsert(ctx, row));
+  connection.db.incident_report.onDelete((_ctx, row) => state.update("reports", row as IncidentReport, true));
+  const profileInsert = (_ctx: unknown, row: UserAlertProfile) => state.update("profiles", row);
+  connection.db.user_alert_profile.onInsert((ctx, row) => profileInsert(ctx, row as UserAlertProfile));
+  connection.db.user_alert_profile.onUpdate((ctx, _old, row) => profileInsert(ctx, row as UserAlertProfile));
+  connection.db.user_alert_profile.onDelete((_ctx, row) => state.update("profiles", row as UserAlertProfile, true));
 
   const db = createDb(connection);
   return { db, disconnect() { disposed = true; connection.disconnect(); } };

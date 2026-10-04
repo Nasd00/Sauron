@@ -1,4 +1,4 @@
-import type { Incident, MobileDevice, UserAlertProfile, Watch } from "@tempmhacks/shared";
+import type { IncidentView, MobileDevice, UserAlertProfile, Watch } from "@tempmhacks/shared";
 import { evaluateProfileFreshness, haversineDistanceKm, isLiveTracked } from "@tempmhacks/shared/geo";
 
 // Re-exported so existing imports (and tests) keep a single source of truth.
@@ -19,18 +19,27 @@ export interface ProfileAlertMatcherStore {
 }
 
 /**
+ * Whether an incident is close enough to a target to alert it. Camera incidents are points; a
+ * manual report has a danger zone, so it alerts anyone whose area overlaps that zone.
+ */
+export function withinAlertRange(
+  incident: Pick<IncidentView, "latitude" | "longitude" | "report">,
+  target: { latitude: number; longitude: number; radiusKm: number },
+): boolean {
+  const distanceKm = haversineDistanceKm(incident.latitude, incident.longitude, target.latitude, target.longitude);
+  return distanceKm <= target.radiusKm + (incident.report?.radiusKm ?? 0);
+}
+
+/**
  * Secondary, place-based matching: confirmed incidents against active WATCH
  * subscriptions. Unchanged behavior; kept as the fallback surface.
  */
-export async function matchConfirmedIncident(incident: Incident, store: AlertMatcherStore): Promise<number> {
+export async function matchConfirmedIncident(incident: IncidentView, store: AlertMatcherStore): Promise<number> {
   if (incident.status !== "confirmed") return 0;
   let created = 0;
   for (const watch of await store.listActiveWatches()) {
     if (!watch.active) continue;
-    const distanceKm = haversineDistanceKm(
-      incident.latitude, incident.longitude, watch.latitude, watch.longitude,
-    );
-    if (distanceKm <= watch.radiusKm && await store.createAlert(incident.id, watch.id)) created += 1;
+    if (withinAlertRange(incident, watch) && await store.createAlert(incident.id, watch.id)) created += 1;
   }
   return created;
 }
@@ -45,7 +54,7 @@ export type ProfileMatchOptions = { now: number };
  * incident/profile is enforced by the store's createProfileAlert.
  */
 export async function matchConfirmedIncidentToProfiles(
-  incident: Incident,
+  incident: IncidentView,
   store: ProfileAlertMatcherStore,
   options: ProfileMatchOptions,
 ): Promise<number> {
@@ -56,10 +65,7 @@ export async function matchConfirmedIncidentToProfiles(
     if (!profile.alertsEnabled) continue;
     const live = isLiveTracked(profile.senderId, devices);
     if (!evaluateProfileFreshness(profile, live, options.now).fresh) continue;
-    const distanceKm = haversineDistanceKm(
-      incident.latitude, incident.longitude, profile.latitude, profile.longitude,
-    );
-    if (distanceKm <= profile.radiusKm && await store.createProfileAlert(incident.id, profile.userId)) {
+    if (withinAlertRange(incident, profile) && await store.createProfileAlert(incident.id, profile.userId)) {
       created += 1;
     }
   }

@@ -147,7 +147,7 @@ export function createVoiceSession({ createAdapter, runner, signal }) {
       }
     },
     sendText: (text) => !disposed && adapter.sendText(text),
-    sendMapEvent: (event) => !disposed && adapter.sendMapEvent(event),
+    sendMapEvent: (event, options) => !disposed && adapter.sendMapEvent(event, options),
     destroy: () => dispose(),
   };
 }

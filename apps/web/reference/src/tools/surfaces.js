@@ -46,6 +46,9 @@ export const TOOL_SURFACES = Object.freeze({
   find_radio_stations: mcpOff,
   get_bike_share: mcpOff,
   get_transit_vehicles: mcpOff,
+  // Read the open app's live incident state, so only voice inside the app can run them.
+  get_active_dangers: mcpOff,
+  get_escape_route: mcpOff,
 });
 
 /**
