@@ -6,11 +6,14 @@
 import { type Infer as __Infer } from "spacetimedb";
 
 // Import all reducer arg schemas
+import ClaimAlertReducer from "../claim_alert_reducer";
+import ClaimInboundMessageReducer from "../claim_inbound_message_reducer";
 import ConfirmIncidentReducer from "../confirm_incident_reducer";
 import CreateAlertReducer from "../create_alert_reducer";
+import CreateAlertForProfileReducer from "../create_alert_for_profile_reducer";
 import CreateIncidentReducer from "../create_incident_reducer";
 import CreateWatchReducer from "../create_watch_reducer";
-import DeactivateWatchesForUserReducer from "../deactivate_watches_for_user_reducer";
+import DeactivateWatchesForSenderReducer from "../deactivate_watches_for_sender_reducer";
 import DismissIncidentReducer from "../dismiss_incident_reducer";
 import InsertAlertReducer from "../insert_alert_reducer";
 import InsertWatchReducer from "../insert_watch_reducer";
@@ -19,14 +22,20 @@ import MarkAlertSentReducer from "../mark_alert_sent_reducer";
 import PublishObservationReducer from "../publish_observation_reducer";
 import RegisterCameraReducer from "../register_camera_reducer";
 import ResolveIncidentReducer from "../resolve_incident_reducer";
+import SetAlertsEnabledReducer from "../set_alerts_enabled_reducer";
 import SetCameraStatusReducer from "../set_camera_status_reducer";
 import UpdateIncidentDetectionReducer from "../update_incident_detection_reducer";
+import UpsertConversationContextReducer from "../upsert_conversation_context_reducer";
+import UpsertUserAlertProfileReducer from "../upsert_user_alert_profile_reducer";
 
+export type ClaimAlertParams = __Infer<typeof ClaimAlertReducer>;
+export type ClaimInboundMessageParams = __Infer<typeof ClaimInboundMessageReducer>;
 export type ConfirmIncidentParams = __Infer<typeof ConfirmIncidentReducer>;
 export type CreateAlertParams = __Infer<typeof CreateAlertReducer>;
+export type CreateAlertForProfileParams = __Infer<typeof CreateAlertForProfileReducer>;
 export type CreateIncidentParams = __Infer<typeof CreateIncidentReducer>;
 export type CreateWatchParams = __Infer<typeof CreateWatchReducer>;
-export type DeactivateWatchesForUserParams = __Infer<typeof DeactivateWatchesForUserReducer>;
+export type DeactivateWatchesForSenderParams = __Infer<typeof DeactivateWatchesForSenderReducer>;
 export type DismissIncidentParams = __Infer<typeof DismissIncidentReducer>;
 export type InsertAlertParams = __Infer<typeof InsertAlertReducer>;
 export type InsertWatchParams = __Infer<typeof InsertWatchReducer>;
@@ -35,6 +44,9 @@ export type MarkAlertSentParams = __Infer<typeof MarkAlertSentReducer>;
 export type PublishObservationParams = __Infer<typeof PublishObservationReducer>;
 export type RegisterCameraParams = __Infer<typeof RegisterCameraReducer>;
 export type ResolveIncidentParams = __Infer<typeof ResolveIncidentReducer>;
+export type SetAlertsEnabledParams = __Infer<typeof SetAlertsEnabledReducer>;
 export type SetCameraStatusParams = __Infer<typeof SetCameraStatusReducer>;
 export type UpdateIncidentDetectionParams = __Infer<typeof UpdateIncidentDetectionReducer>;
+export type UpsertConversationContextParams = __Infer<typeof UpsertConversationContextReducer>;
+export type UpsertUserAlertProfileParams = __Infer<typeof UpsertUserAlertProfileReducer>;
 

@@ -1,77 +1,63 @@
-import type { Incident, Watch } from "@tempmhacks/shared";
-import type { Db } from "@tempmhacks/shared/db";
+import type { Incident, UserAlertProfile, Watch } from "@tempmhacks/shared";
+import { evaluateLocationFreshness, haversineDistanceKm } from "@tempmhacks/shared/geo";
 
-const EARTH_RADIUS_KM = 6371;
+// Re-exported so existing imports (and tests) keep a single source of truth.
+export { haversineDistanceKm };
 
-function toRadians(degrees: number): number {
-  return degrees * Math.PI / 180;
+export interface AlertMatcherStore {
+  listActiveWatches(): Promise<Watch[]>;
+  /** Returns false when the incident/watch pair already has an alert. */
+  createAlert(incidentId: string, watchId: string): Promise<boolean>;
 }
 
-export function haversineDistanceKm(
-  latitudeA: number,
-  longitudeA: number,
-  latitudeB: number,
-  longitudeB: number,
-): number {
-  const latitudeDelta = toRadians(latitudeB - latitudeA);
-  const longitudeDelta = toRadians(longitudeB - longitudeA);
-  const a = Math.sin(latitudeDelta / 2) ** 2
-    + Math.cos(toRadians(latitudeA)) * Math.cos(toRadians(latitudeB))
-    * Math.sin(longitudeDelta / 2) ** 2;
-  return 2 * EARTH_RADIUS_KM * Math.asin(Math.sqrt(a));
+export interface ProfileAlertMatcherStore {
+  listProfiles(): Promise<UserAlertProfile[]>;
+  /** Returns false when the incident/profile pair already has an alert. */
+  createProfileAlert(incidentId: string, userId: string): Promise<boolean>;
 }
 
-export type CreateAlert = (incidentId: string, watchId: string) => Promise<void> | void;
-
-export async function matchConfirmedIncident(
-  incident: Incident,
-  watches: Iterable<Watch>,
-  createAlert: CreateAlert,
-  existingAlertKeys: ReadonlySet<string> = new Set(),
-): Promise<number> {
+/**
+ * Secondary, place-based matching: confirmed incidents against active WATCH
+ * subscriptions. Unchanged behavior; kept as the fallback surface.
+ */
+export async function matchConfirmedIncident(incident: Incident, store: AlertMatcherStore): Promise<number> {
   if (incident.status !== "confirmed") return 0;
-
-  const matchedKeys = new Set(existingAlertKeys);
   let created = 0;
-  for (const watch of watches) {
+  for (const watch of await store.listActiveWatches()) {
     if (!watch.active) continue;
-    const key = alertKey(incident.id, watch.id);
-    if (matchedKeys.has(key)) continue;
     const distanceKm = haversineDistanceKm(
       incident.latitude, incident.longitude, watch.latitude, watch.longitude,
     );
-    if (distanceKm <= watch.radiusKm) {
-      matchedKeys.add(key);
-      await createAlert(incident.id, watch.id);
-      created += 1;
-    }
+    if (distanceKm <= watch.radiusKm && await store.createAlert(incident.id, watch.id)) created += 1;
   }
   return created;
 }
 
-function alertKey(incidentId: string, watchId: string): string {
-  return `${incidentId}:${watchId}`;
-}
+export type ProfileMatchOptions = { now: number };
 
-export function startIncidentMatcher(
-  db: Pick<Db, "incidents" | "alerts">,
-  getWatches: () => Iterable<Watch>,
-  onError: (error: unknown) => void = () => undefined,
-): () => void {
-  const existingAlertKeys = new Set<string>();
-  const stopAlerts = db.alerts.subscribe(alert => {
-    const key = alertKey(alert.incidentId, alert.watchId);
-    if (alert.status === "pending" || alert.status === "sent" || alert.status === "failed") {
-      existingAlertKeys.add(key);
+/**
+ * Primary, current-location matching. A confirmed incident alerts a profile only
+ * when alerts are enabled, the shared location is still fresh, and the incident is
+ * within the profile's radius. Deterministic; the freshness and distance rules are
+ * pure and shared with the conversational phrasing layer. One alert per
+ * incident/profile is enforced by the store's createProfileAlert.
+ */
+export async function matchConfirmedIncidentToProfiles(
+  incident: Incident,
+  store: ProfileAlertMatcherStore,
+  options: ProfileMatchOptions,
+): Promise<number> {
+  if (incident.status !== "confirmed") return 0;
+  let created = 0;
+  for (const profile of await store.listProfiles()) {
+    if (!profile.alertsEnabled) continue;
+    if (!evaluateLocationFreshness(profile.locationUpdatedAt, options.now).fresh) continue;
+    const distanceKm = haversineDistanceKm(
+      incident.latitude, incident.longitude, profile.latitude, profile.longitude,
+    );
+    if (distanceKm <= profile.radiusKm && await store.createProfileAlert(incident.id, profile.userId)) {
+      created += 1;
     }
-  });
-  const stopIncidents = db.incidents.subscribe(incident => {
-    if (incident.status !== "confirmed") return;
-    void matchConfirmedIncident(incident, getWatches(), (incidentId, watchId) =>
-      db.alerts.create(incidentId, watchId), existingAlertKeys).then(() => undefined).catch(onError);
-  });
-  return () => {
-    stopIncidents();
-    stopAlerts();
-  };
+  }
+  return created;
 }

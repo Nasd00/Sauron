@@ -10,6 +10,12 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
+import {
+  UserAlertProfileInput,
+} from "./types";
+
 export default {
-  userHandle: __t.string(),
+  get input() {
+    return UserAlertProfileInput;
+  },
 };

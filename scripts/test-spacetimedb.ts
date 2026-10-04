@@ -163,8 +163,45 @@ async function main() {
     assert.equal(query(`SELECT * FROM alert WHERE incident_id = '${incident.id}'`).length, 0);
     assert.equal(query(`SELECT * FROM alert WHERE incident_id = '${dismissed.id}'`).length, 0);
 
+    const inbound = {
+      messageId: id("message"), spaceId: "integration-space", senderId: "integration-sender",
+      receivedAt: now, contentType: "text",
+    };
+    call("claim_inbound_message", inbound);
+    rejects("claim_inbound_message", [inbound], /already claimed/);
+
+    const matchingIncident: Incident = { ...incident, id: id("matching-incident") };
+    call("create_incident", matchingIncident);
+    call("confirm_incident", matchingIncident.id, now + 20);
+    const firstWatch: Watch = {
+      id: id("first-watch"), spaceId: "space-first", senderId: "sender-command", placeLabel: "First place",
+      latitude: camera.latitude, longitude: camera.longitude, radiusKm: 10, active: true, createdAt: now,
+    };
+    const replacementWatch: Watch = {
+      ...firstWatch, id: id("replacement-watch"), spaceId: "space-replacement", placeLabel: "Replacement place",
+      createdAt: now + 1,
+    };
+    call("create_watch", firstWatch);
+    call("create_watch", replacementWatch);
+    assert.equal(query(`SELECT * FROM watch WHERE id = '${firstWatch.id}'`)[0].active, false);
+    assert.equal(query(`SELECT * FROM watch WHERE id = '${replacementWatch.id}'`)[0].active, true);
+    call("create_alert", matchingIncident.id, replacementWatch.id);
+    rejects("create_alert", [matchingIncident.id, replacementWatch.id], /already exists/);
+    const sentAlertId = `${matchingIncident.id}:${replacementWatch.id}`;
+    call("claim_alert", sentAlertId);
+    assert.equal(query(`SELECT * FROM alert WHERE id = '${sentAlertId}'`)[0].status, "sending");
+    rejects("claim_alert", [sentAlertId], /Cannot claim sending/);
+    call("mark_alert_sent", sentAlertId, "spectrum-message-1", now + 30);
+    assert.deepEqual(query(`SELECT * FROM alert WHERE id = '${sentAlertId}'`)[0], {
+      id: sentAlertId, incidentId: matchingIncident.id, watchId: replacementWatch.id, status: "sent",
+      createdAt: query(`SELECT * FROM alert WHERE id = '${sentAlertId}'`)[0].createdAt,
+      sentAt: now + 30, providerMessageId: "spectrum-message-1", error: undefined,
+    });
+    call("deactivate_watches_for_sender", replacementWatch.senderId);
+    assert.equal(query(`SELECT * FROM watch WHERE sender_id = '${replacementWatch.senderId}' AND active = true`).length, 0);
+
     const watch: Watch = {
-      id: id("watch"), userHandle: "integration-user", placeLabel: "Ann Arbor",
+      id: id("watch"), spaceId: "integration-space", senderId: "integration-sender", placeLabel: "Ann Arbor",
       latitude: camera.latitude, longitude: camera.longitude, radiusKm: 10, active: true, createdAt: now,
     };
     const alert: Alert = {
@@ -180,7 +217,7 @@ async function main() {
     rejects("insert_alert", [alert], /already exists/);
     rejects("insert_alert", [{ ...alert, id: id("duplicate-pair") }], /already exists for this incident and watch/);
     assert.deepEqual(query(`SELECT * FROM alert WHERE incident_id = '${incident.id}' AND watch_id = '${watch.id}'`)[0], alert);
-    console.log("Integration passed: five tables, unique IDs and alert pairs, camera/observation validation, incident transitions, and realtime subscriptions.");
+    console.log("Integration passed: inbound dedupe, watch replacement/STOP, alert claims/delivery, lifecycle rules, and realtime subscriptions.");
   } finally {
     observations.stop();
     incidents.stop();

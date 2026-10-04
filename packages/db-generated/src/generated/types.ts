@@ -66,6 +66,44 @@ export const CameraInput = __t.object("CameraInput", {
 });
 export type CameraInput = __Infer<typeof CameraInput>;
 
+export const ConversationContext = __t.object("ConversationContext", {
+  spaceId: __t.string(),
+  activeIncidentId: __t.option(__t.string()),
+  lastCameraId: __t.option(__t.string()),
+  lastIntent: __t.option(__t.string()),
+  alertedAt: __t.option(__t.f64()),
+  updatedAt: __t.f64(),
+});
+export type ConversationContext = __Infer<typeof ConversationContext>;
+
+export const ConversationContextInput = __t.object("ConversationContextInput", {
+  spaceId: __t.string(),
+  activeIncidentId: __t.option(__t.string()),
+  lastCameraId: __t.option(__t.string()),
+  lastIntent: __t.option(__t.string()),
+  alertedAt: __t.option(__t.f64()),
+  updatedAt: __t.f64(),
+});
+export type ConversationContextInput = __Infer<typeof ConversationContextInput>;
+
+export const InboundReceipt = __t.object("InboundReceipt", {
+  messageId: __t.string(),
+  spaceId: __t.string(),
+  senderId: __t.string(),
+  receivedAt: __t.f64(),
+  contentType: __t.string(),
+});
+export type InboundReceipt = __Infer<typeof InboundReceipt>;
+
+export const InboundReceiptInput = __t.object("InboundReceiptInput", {
+  messageId: __t.string(),
+  spaceId: __t.string(),
+  senderId: __t.string(),
+  receivedAt: __t.f64(),
+  contentType: __t.string(),
+});
+export type InboundReceiptInput = __Infer<typeof InboundReceiptInput>;
+
 export const Incident = __t.object("Incident", {
   id: __t.string(),
   cameraId: __t.string(),
@@ -127,9 +165,46 @@ export const ObservationInput = __t.object("ObservationInput", {
 });
 export type ObservationInput = __Infer<typeof ObservationInput>;
 
+export const SpectrumEvent = __t.object("SpectrumEvent", {
+  eventId: __t.string(),
+  receivedAt: __t.f64(),
+});
+export type SpectrumEvent = __Infer<typeof SpectrumEvent>;
+
+export const UserAlertProfile = __t.object("UserAlertProfile", {
+  userId: __t.string(),
+  spaceId: __t.string(),
+  senderId: __t.string(),
+  latitude: __t.f64(),
+  longitude: __t.f64(),
+  accuracyMeters: __t.option(__t.f64()),
+  locationUpdatedAt: __t.f64(),
+  radiusKm: __t.f64(),
+  alertsEnabled: __t.bool(),
+  createdAt: __t.f64(),
+  updatedAt: __t.f64(),
+});
+export type UserAlertProfile = __Infer<typeof UserAlertProfile>;
+
+export const UserAlertProfileInput = __t.object("UserAlertProfileInput", {
+  userId: __t.string(),
+  spaceId: __t.string(),
+  senderId: __t.string(),
+  latitude: __t.f64(),
+  longitude: __t.f64(),
+  accuracyMeters: __t.option(__t.f64()),
+  locationUpdatedAt: __t.f64(),
+  radiusKm: __t.f64(),
+  alertsEnabled: __t.bool(),
+  createdAt: __t.f64(),
+  updatedAt: __t.f64(),
+});
+export type UserAlertProfileInput = __Infer<typeof UserAlertProfileInput>;
+
 export const Watch = __t.object("Watch", {
   id: __t.string(),
-  userHandle: __t.string(),
+  spaceId: __t.string(),
+  senderId: __t.string(),
   placeLabel: __t.string(),
   latitude: __t.f64(),
   longitude: __t.f64(),
@@ -141,7 +216,8 @@ export type Watch = __Infer<typeof Watch>;
 
 export const WatchInput = __t.object("WatchInput", {
   id: __t.string(),
-  userHandle: __t.string(),
+  spaceId: __t.string(),
+  senderId: __t.string(),
   placeLabel: __t.string(),
   latitude: __t.f64(),
   longitude: __t.f64(),

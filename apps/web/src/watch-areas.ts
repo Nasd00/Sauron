@@ -137,8 +137,8 @@ export function mountWatchAreas(
       <p class="watch-coords">${draft.latitude.toFixed(4)}, ${draft.longitude.toFixed(4)}</p>
       <label class="watch-label" for="watch-place">Area label</label>
       <input id="watch-place" class="watch-input" type="text" placeholder="e.g. Downtown" value="${escapeHtml(draft.label)}" />
-      <label class="watch-label" for="watch-handle">Notify (user handle)</label>
-      <input id="watch-handle" class="watch-input" type="text" placeholder="e.g. +15551234567" value="${escapeHtml(draft.handle)}" />
+      <label class="watch-label" for="watch-handle">Notify (enrolled recipient ID)</label>
+      <input id="watch-handle" class="watch-input" type="text" placeholder="Recipient ID from alert enrollment" value="${escapeHtml(draft.handle)}" />
       <label class="watch-label" for="watch-radius">Radius: <span class="watch-radius-val">${draft.radiusKm} km</span></label>
       <input id="watch-radius" class="watch-range" type="range" min="${MIN_RADIUS_KM}" max="${MAX_RADIUS_KM}" step="0.5" value="${draft.radiusKm}" />
       <div class="watch-actions">
@@ -172,14 +172,20 @@ export function mountWatchAreas(
     const handle = draft.handle.trim();
     const err = errorText();
     if (!label) { if (err) err.textContent = "Add an area label."; return; }
-    if (!handle) { if (err) err.textContent = "Add a user handle to notify."; return; }
+    if (!handle) { if (err) err.textContent = "Add an enrolled recipient ID to notify."; return; }
+    const profile = db.profiles.getForSender(handle) ?? db.profiles.get(handle);
+    if (!profile) {
+      if (err) err.textContent = "Recipient not found. Enroll in alerts first, then use your recipient ID.";
+      return;
+    }
     saving = true;
     if (err) err.textContent = "";
     const saveBtn = form.querySelector<HTMLButtonElement>(".watch-save");
     if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = "Saving…"; }
     const watch: Watch = {
       id: `watch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      userHandle: handle,
+      spaceId: profile.spaceId,
+      senderId: profile.senderId,
       placeLabel: label,
       latitude: draft.latitude,
       longitude: draft.longitude,

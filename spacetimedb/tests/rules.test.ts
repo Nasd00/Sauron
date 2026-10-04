@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { Alert, Camera, Incident, IncidentStatus, Observation, Watch } from "@tempmhacks/shared";
+import type { Alert, Camera, Incident, IncidentStatus, InboundReceipt, Observation, Watch } from "@tempmhacks/shared";
 import {
   cameraStatusUpdate, requireConfidence, requireTimestamp, validateCamera,
   validateObservation, validateNewIncident, updateDetection,
   confirmIncident, dismissIncident, resolveIncident, validateWatch,
-  markAlertSent, markAlertFailed,
+  claimAlert, markAlertSent, markAlertFailed,
+  validateInboundReceipt,
 } from "../src/rules.js";
 
 const candidate: Incident = {
@@ -44,7 +45,7 @@ test("timestamps use safe integer Unix milliseconds", () => {
 
 test("watch validation activates and normalizes a positive-radius watch", () => {
   const watch: Watch = {
-    id: "watch-1", userHandle: "user-1", placeLabel: "  City   Hall ",
+    id: "watch-1", spaceId: "space-1", senderId: "sender-1", placeLabel: "  City   Hall ",
     latitude: 42, longitude: -83, radiusKm: 10, active: false, createdAt: 1000,
   };
   assert.deepEqual(validateWatch(watch), { ...watch, active: true, placeLabel: "City Hall" });
@@ -56,10 +57,13 @@ test("alerts can leave pending exactly once", () => {
   const alert: Alert = {
     id: "alert-1", incidentId: "incident-1", watchId: "watch-1", status: "pending", createdAt: 1000,
   };
-  const sent = markAlertSent(alert, "provider-1", 2000);
+  const claimed = claimAlert(alert);
+  assert.equal(claimed.status, "sending");
+  assert.throws(() => claimAlert(claimed), /Cannot claim sending/);
+  const sent = markAlertSent(claimed, "provider-1", 2000);
   assert.deepEqual(sent, { ...alert, status: "sent", providerMessageId: "provider-1", sentAt: 2000 });
   assert.throws(() => markAlertSent(sent, "provider-2", 3000), /Cannot mark sent/);
-  const failed = markAlertFailed(alert, "provider unavailable");
+  const failed = markAlertFailed(claimed, "provider unavailable");
   assert.deepEqual(failed, { ...alert, status: "failed", error: "provider unavailable" });
   assert.throws(() => markAlertFailed(failed, "retry"), /Cannot mark failed/);
 });
@@ -112,4 +116,21 @@ test("confirmation and resolution timestamps cannot be overwritten", () => {
   assert.equal(resolved.confirmedAt, 3000);
   assert.equal(resolved.resolvedAt, 4000);
   assert.throws(() => resolveIncident(resolved, 5000));
+});
+
+test("inbound claim validates identity and metadata before claiming", () => {
+  const base: InboundReceipt = {
+    messageId: "spc-msg-2", spaceId: "space-2", senderId: "sender-2",
+    receivedAt: 1_700_000_000_000, contentType: "text",
+  };
+  // Valid receipt passes validation.
+  assert.doesNotThrow(() => validateInboundReceipt(base));
+  // Empty identity fields are rejected.
+  for (const field of ["messageId", "spaceId", "senderId"] as const) {
+    assert.throws(() => validateInboundReceipt({ ...base, [field]: "   " }), /identity fields/);
+  }
+  // Empty content type is rejected.
+  assert.throws(() => validateInboundReceipt({ ...base, contentType: "" }), /contentType/);
+  // Invalid timestamp is rejected.
+  assert.throws(() => validateInboundReceipt({ ...base, receivedAt: -1 }), /Timestamp/);
 });

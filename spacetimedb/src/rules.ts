@@ -1,4 +1,4 @@
-import type { Alert, Camera, Incident, Observation, Watch } from "@tempmhacks/shared";
+import type { Alert, Camera, Incident, InboundReceipt, Observation, Watch, UserAlertProfile, ConversationContext } from "@tempmhacks/shared";
 
 export function requireConfidence(confidence: number): void {
   if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
@@ -23,7 +23,8 @@ export function normalizePlaceLabel(placeLabel: string): string {
 }
 
 export function validateWatch(watch: Watch): Watch {
-  if (!watch.userHandle.trim()) throw new Error("Watch userHandle must not be empty");
+  if (!watch.spaceId.trim()) throw new Error("Watch spaceId must not be empty");
+  if (!watch.senderId.trim()) throw new Error("Watch senderId must not be empty");
   if (!Number.isFinite(watch.radiusKm) || watch.radiusKm <= 0) {
     throw new Error("Watch radiusKm must be greater than 0");
   }
@@ -32,20 +33,25 @@ export function validateWatch(watch: Watch): Watch {
 }
 
 export function validateAlertStatus(status: string): asserts status is Alert["status"] {
-  if (status !== "pending" && status !== "sent" && status !== "failed") {
+  if (status !== "pending" && status !== "sending" && status !== "sent" && status !== "failed") {
     throw new Error("Invalid alert status");
   }
 }
 
+export function claimAlert(alert: Alert): Alert {
+  if (alert.status !== "pending") throw new Error(`Cannot claim ${alert.status} alert`);
+  return { ...alert, status: "sending" };
+}
+
 export function markAlertSent(alert: Alert, providerMessageId: string, sentAt: number): Alert {
-  if (alert.status !== "pending") throw new Error(`Cannot mark ${alert.status} alert as sent`);
+  if (alert.status !== "sending") throw new Error(`Cannot mark ${alert.status} alert as sent`);
   if (!providerMessageId.trim()) throw new Error("Provider message ID must not be empty");
   requireTimestamp(sentAt);
   return { ...alert, status: "sent", providerMessageId, sentAt };
 }
 
 export function markAlertFailed(alert: Alert, error: string): Alert {
-  if (alert.status !== "pending") throw new Error(`Cannot mark ${alert.status} alert as failed`);
+  if (alert.status !== "sending") throw new Error(`Cannot mark ${alert.status} alert as failed`);
   if (!error.trim()) throw new Error("Alert error must not be empty");
   return { ...alert, status: "failed", error };
 }
@@ -111,4 +117,70 @@ export function resolveIncident(incident: Incident, resolvedAt: number): Inciden
   if (incident.resolvedAt !== undefined) throw new Error("Resolution timestamp is already set");
   requireTimestamp(resolvedAt);
   return { ...incident, status: "resolved", resolvedAt };
+}
+
+/**
+ * Validates the identity and metadata fields of an inbound receipt before it is
+ * durably claimed. Pure; throws on invalid input.
+ */
+export function validateInboundReceipt(receipt: InboundReceipt): void {
+  if (!receipt.messageId.trim() || !receipt.spaceId.trim() || !receipt.senderId.trim()) {
+    throw new Error("Inbound message identity fields must not be empty");
+  }
+  requireTimestamp(receipt.receivedAt);
+  if (!receipt.contentType.trim()) throw new Error("Inbound contentType must not be empty");
+}
+
+export function requireLatitude(value: number): void {
+  if (!Number.isFinite(value) || value < -90 || value > 90) {
+    throw new Error("Latitude must be a finite number between -90 and 90");
+  }
+}
+
+export function requireLongitude(value: number): void {
+  if (!Number.isFinite(value) || value < -180 || value > 180) {
+    throw new Error("Longitude must be a finite number between -180 and 180");
+  }
+}
+
+/**
+ * Validates a current-location monitoring profile and returns a normalized copy.
+ * Pure; throws on invalid input. The reducer runs this inside its transaction so
+ * a malformed profile is rejected atomically with the upsert.
+ */
+export function validateUserAlertProfile(profile: UserAlertProfile): UserAlertProfile {
+  if (!profile.userId.trim()) throw new Error("Profile userId must not be empty");
+  if (!profile.spaceId.trim()) throw new Error("Profile spaceId must not be empty");
+  if (!profile.senderId.trim()) throw new Error("Profile senderId must not be empty");
+  requireLatitude(profile.latitude);
+  requireLongitude(profile.longitude);
+  if (profile.accuracyMeters !== undefined) {
+    if (!Number.isFinite(profile.accuracyMeters) || profile.accuracyMeters < 0) {
+      throw new Error("Profile accuracyMeters must be a nonnegative finite number");
+    }
+  }
+  requireTimestamp(profile.locationUpdatedAt);
+  if (!Number.isFinite(profile.radiusKm) || profile.radiusKm <= 0) {
+    throw new Error("Profile radiusKm must be greater than 0");
+  }
+  requireTimestamp(profile.createdAt);
+  requireTimestamp(profile.updatedAt);
+  return profile;
+}
+
+/** Validates a conversation context before it is persisted. Pure; throws on invalid input. */
+export function validateConversationContext(context: ConversationContext): ConversationContext {
+  if (!context.spaceId.trim()) throw new Error("ConversationContext spaceId must not be empty");
+  if (context.activeIncidentId !== undefined && !context.activeIncidentId.trim()) {
+    throw new Error("ConversationContext activeIncidentId must not be empty when present");
+  }
+  if (context.lastCameraId !== undefined && !context.lastCameraId.trim()) {
+    throw new Error("ConversationContext lastCameraId must not be empty when present");
+  }
+  if (context.lastIntent !== undefined && !context.lastIntent.trim()) {
+    throw new Error("ConversationContext lastIntent must not be empty when present");
+  }
+  if (context.alertedAt !== undefined) requireTimestamp(context.alertedAt);
+  requireTimestamp(context.updatedAt);
+  return context;
 }
