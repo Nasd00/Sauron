@@ -1,0 +1,17 @@
+{
+  "name": "@tempmhacks/evac",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Evacuation-assist agent: official warnings, destinations, helper transport, and closure-driven reroutes over Photon Spectrum",
+  "scripts": {
+    "build": "tsc --noEmit -p tsconfig.json",
+    "start": "tsx src/main.ts",
+    "warm-cache": "tsx scripts/warm-route-cache.ts"
+  },
+  "dependencies": {
+    "@tempmhacks/shared": "*",
+    "spectrum-ts": "12.10.1",
+    "zod": "4.6.5"
+  }
+}
