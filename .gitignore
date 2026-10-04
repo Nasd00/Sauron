@@ -85,6 +85,7 @@ apps/web/certs/
 .playwright-mcp/
 .iris-cache/
 .iris-logs/
+.vercel
 
 # Xcode
 xcuserdata/

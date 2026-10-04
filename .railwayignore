@@ -1,0 +1,9 @@
+# Railway runs only photon and alerts. Keep every workspace's package.json (npm installs at the
+# repo root) but skip the frontend's sources and media, which the backends never use.
+apps/web/reference/docs/
+apps/web/reference/src/
+apps/web/reference/public/
+apps/web/reference/pinokio/
+apps/web/src/
+apps/web/tests/
+fixtures/
