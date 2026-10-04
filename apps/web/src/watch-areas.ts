@@ -221,7 +221,7 @@ export function mountWatchAreas(
       return;
     }
     const secret = operatorSecret();
-    if (!secret) { if (err) err.textContent = "An operator key is needed to enroll a phone."; return; }
+    if (!secret) { if (err) err.textContent = "Set VITE_PHOTON_ADMIN_SECRET to enroll a phone."; return; }
     saving = true;
     if (err) err.textContent = "";
     const saveBtn = form.querySelector<HTMLButtonElement>(".watch-save");

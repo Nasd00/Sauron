@@ -42,6 +42,9 @@
     "dev:evac": "npm run build:shared && npm run start --workspace @tempmhacks/evac",
     "dev:cv": "npm run build:shared && npm run dev --workspace @tempmhacks/cv",
     "dev:photon": "npm run dev --workspace @tempmhacks/photon",
+    "dev:ngrok": "ngrok http --url=${NGROK_HOST:-starfish-revolving-footman.ngrok-free.dev} ${PHOTON_PORT:-3001}",
+    "dev:stack": "bash scripts/dev-stack.sh",
+    "dev:stack:health": "curl -fsS https://${NGROK_HOST:-starfish-revolving-footman.ngrok-free.dev}/health && echo",
     "photon:send-test": "npm run send-test --workspace @tempmhacks/photon --",
     "dev:alerts": "npm run dev --workspace @tempmhacks/alerts",
     "demo:start": "node -e \"console.log('Hosted DB: set SPACETIMEDB_* in .env, then run npm run demo:seed:cameras:sdk and npm run dev:photon / npm run dev:alerts / npm run dev:cv. Local DB: npm run demo:download-fixture, npm run db:publish, npm run demo:seed:cameras.')\""

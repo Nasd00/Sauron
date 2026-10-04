@@ -6,6 +6,13 @@
 
 export const E164 = /^\+[1-9]\d{6,14}$/;
 
+/**
+ * Headers sent on every admin request. `ngrok-skip-browser-warning` tells a free ngrok tunnel to
+ * forward the request to Photon instead of returning its HTML interstitial (ERR_NGROK_6024), which
+ * carries no CORS headers and otherwise makes the browser fetch fail. Harmless on non-ngrok hosts.
+ */
+const ADMIN_HEADERS = { "content-type": "application/json", "ngrok-skip-browser-warning": "true" } as const;
+
 export type EnrollRequest = { phone: string; latitude: number; longitude: number; label: string; radiusKm: number };
 
 export type EnrollResult =
@@ -19,7 +26,7 @@ export async function enrollPhone(
   try {
     response = await doFetch(new URL("/admin/users", baseUrl), {
       method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${secret}` },
+      headers: { ...ADMIN_HEADERS, authorization: `Bearer ${secret}` },
       body: JSON.stringify(request),
     });
   } catch {
@@ -46,7 +53,7 @@ async function postAdmin(
   try {
     response = await doFetch(new URL(path, baseUrl), {
       method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${secret}` },
+      headers: { ...ADMIN_HEADERS, authorization: `Bearer ${secret}` },
       body: JSON.stringify(body),
     });
   } catch {
@@ -81,16 +88,19 @@ export async function resolveIncidentViaPhoton(
 
 const SECRET_KEY = "photon-admin-secret";
 
-/** The operator's Photon admin key for this browser tab. Never bundled into the app. */
-export function operatorSecret(ask: () => string | null = () => window.prompt("Operator key (PHOTON_ADMIN_SECRET):")): string | undefined {
+/**
+ * The operator's Photon admin key. Pre-seeded from `VITE_PHOTON_ADMIN_SECRET` so the operator
+ * console never prompts — this site is assumed to be reachable only by admins. The value is
+ * compiled into the public bundle, so only deploy this build where that is acceptable. A value
+ * stashed in sessionStorage still wins if present (manual override for a tab).
+ */
+export function operatorSecret(): string | undefined {
   try {
-    const stored = sessionStorage.getItem(SECRET_KEY);
+    const stored = sessionStorage.getItem(SECRET_KEY)?.trim();
     if (stored) return stored;
-  } catch { /* storage unavailable: ask every time */ }
-  const entered = ask()?.trim();
-  if (!entered) return undefined;
-  try { sessionStorage.setItem(SECRET_KEY, entered); } catch { /* keep going without storing */ }
-  return entered;
+  } catch { /* storage unavailable: fall through to the env value */ }
+  const seeded = import.meta.env.VITE_PHOTON_ADMIN_SECRET?.trim();
+  return seeded || undefined;
 }
 
 export function forgetOperatorSecret(): void {

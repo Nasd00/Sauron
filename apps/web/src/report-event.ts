@@ -140,7 +140,7 @@ export function mountReportEvent(viewer: Cesium.Viewer, state: LiveState): () =>
     if (!photonUrl) { err.textContent = "Set VITE_PHOTON_URL to send alerts from the map."; return; }
     if (!window.confirm(`Send a danger alert for "${title}"?\n${reachText()}`)) return;
     const secret = operatorSecret();
-    if (!secret) { err.textContent = "An operator key is needed to send alerts."; return; }
+    if (!secret) { err.textContent = "Set VITE_PHOTON_ADMIN_SECRET to send alerts."; return; }
     sending = true;
     err.textContent = "";
     const button = form.querySelector<HTMLButtonElement>(".report-send")!;

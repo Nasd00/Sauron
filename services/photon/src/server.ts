@@ -147,7 +147,7 @@ function corsHeaders(origin: string | undefined): Record<string, string> {
   return {
     "access-control-allow-origin": origin,
     "access-control-allow-methods": "POST, OPTIONS",
-    "access-control-allow-headers": "authorization, content-type",
+    "access-control-allow-headers": "authorization, content-type, ngrok-skip-browser-warning",
     "access-control-max-age": "600",
     vary: "Origin",
   };
