@@ -17,6 +17,7 @@
     "demo:seed:cameras": "tsx scripts/demo/cameras.ts",
     "dev:web": "npm run dev --workspace @tempmhacks/web",
     "build:web": "npm run build:shared && npm run build --workspace @tempmhacks/web",
+    "dev:evac": "npm run build:shared && npm run start --workspace @tempmhacks/evac",
     "dev:cv": "node -e \"console.log('Placeholder: implement computer vision development in services/cv/')\"",
     "dev:incident": "node -e \"console.log('Placeholder: implement incident development in services/incident/')\"",
     "dev:photon": "node -e \"console.log('Placeholder: implement Photon development in services/photon/')\"",
