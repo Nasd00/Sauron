@@ -9,6 +9,10 @@ import { normalizeSpectrumMessage } from "./normalize.js";
 import { createMessageProcessor } from "./processor.js";
 import { createCommandRouter } from "./router.js";
 import { createMessagingStore } from "./store.js";
+import { GoogleGenAI } from "@google/genai";
+import { HelpAgent, withHelpAgent } from "./assist/agent.js";
+import { ValhallaRouter } from "./assist/routing.js";
+import { createShelterSource } from "./assist/shelters.js";
 import { registerPhotonUser, RegistrationError } from "./users.js";
 
 const config = loadConfig();
@@ -33,12 +37,45 @@ const geocoder = new NominatimGeocoder({
   baseUrl: config.geocoderBaseUrl,
   userAgent: config.geocoderUserAgent,
 });
-const route = createCommandRouter({ store, geocoder, radiusKm: config.watchRadiusKm });
 const messenger = createImessageMessenger(spectrumApp);
 const logger = {
   info: (fields: Record<string, unknown>, message: string) => console.info(JSON.stringify({ level: "info", message, ...fields })),
   error: (fields: Record<string, unknown>, message: string) => console.error(JSON.stringify({ level: "error", message, ...fields })),
 };
+const commands = createCommandRouter({ store, geocoder, radiusKm: config.watchRadiusKm });
+// Without a Gemini key photon runs exactly as before: commands only, no help agent.
+const gemini = config.geminiApiKey ? new GoogleGenAI({ apiKey: config.geminiApiKey }) : undefined;
+const helpAgent = gemini
+  ? new HelpAgent({
+    generate: params => gemini.models.generateContent(params),
+    model: config.geminiModel,
+    tools: {
+      router: new ValhallaRouter({ userAgent: config.geocoderUserAgent }),
+      shelters: createShelterSource({
+        demo: config.assistDemoShelters,
+        onError: error => logger.error({ error: String(error) }, "fema_shelters_unavailable"),
+      }),
+      dangerRadiusKm: config.assistRadiusKm,
+      userAgent: config.geocoderUserAgent,
+    },
+    send: (spaceId, text) => messenger.sendText(spaceId, text),
+    radiusKm: config.assistRadiusKm,
+    logger,
+  })
+  : undefined;
+if (helpAgent) {
+  // The subscription doesn't replay existing rows: incidents confirmed before startup inform answers
+  // silently, and only newly confirmed ones prompt an offer of help.
+  helpAgent.loadIncidents(database.db.incidents.listConfirmed());
+  database.db.incidents.subscribe(incident => {
+    if (incident.status !== "confirmed") return;
+    helpAgent.onIncident(incident, database.db.watches.listActive())
+      .catch(error => logger.error({ incidentId: incident.id, error: String(error) }, "help_agent_incident_failed"));
+  });
+} else {
+  logger.info({}, "help_agent_disabled: set GEMINI_API_KEY to enable");
+}
+const route = helpAgent ? withHelpAgent(commands, helpAgent, store) : commands;
 const processMessage = createMessageProcessor({ store, route, logger });
 
 function normalizedHeaders(headers: IncomingHttpHeaders): Record<string, string> {

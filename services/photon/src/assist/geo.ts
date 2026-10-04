@@ -1,4 +1,6 @@
-import type { LatLng, Polygon } from "@tempmhacks/shared/evac";
+export type LatLng = { latitude: number; longitude: number };
+/** A closed ring; the first point is not repeated at the end. */
+export type Polygon = LatLng[];
 
 const EARTH_RADIUS_KM = 6371;
 const toRadians = (degrees: number) => degrees * Math.PI / 180;
@@ -30,7 +32,7 @@ function orientation(p: LatLng, q: LatLng, r: LatLng): number {
     - (q.latitude - p.latitude) * (r.longitude - p.longitude);
 }
 
-export function segmentsIntersect(a1: LatLng, a2: LatLng, b1: LatLng, b2: LatLng): boolean {
+function segmentsIntersect(a1: LatLng, a2: LatLng, b1: LatLng, b2: LatLng): boolean {
   const d1 = orientation(b1, b2, a1);
   const d2 = orientation(b1, b2, a2);
   const d3 = orientation(a1, a2, b1);
@@ -48,12 +50,6 @@ export function pathIntersectsPolygon(path: LatLng[], polygon: Polygon): boolean
     }
   }
   return false;
-}
-
-export function pathLengthKm(path: LatLng[]): number {
-  let total = 0;
-  for (let i = 1; i < path.length; i++) total += distanceKm(path[i - 1]!, path[i]!);
-  return total;
 }
 
 /** Decode a Google-style encoded polyline (Valhalla uses precision 6). */
@@ -106,26 +102,4 @@ export function circlePolygon(center: LatLng, radiusMeters: number, sides = 20):
 /** Shortest distance from a point to any vertex of a path, in km (paths are densely sampled). */
 export function distanceToPathKm(point: LatLng, path: LatLng[]): number {
   return path.reduce((best, vertex) => Math.min(best, distanceKm(point, vertex)), Number.POSITIVE_INFINITY);
-}
-
-/** A rectangle-ish polygon buffered around a line, for closures defined by a road centerline. */
-export function bufferLine(line: LatLng[], halfWidthMeters = 35): Polygon {
-  if (line.length < 2) throw new Error("bufferLine requires at least two points");
-  const metersPerDegLat = 111_320;
-  const left: LatLng[] = [];
-  const right: LatLng[] = [];
-  for (let i = 0; i < line.length; i++) {
-    const prev = line[Math.max(0, i - 1)]!;
-    const next = line[Math.min(line.length - 1, i + 1)]!;
-    const metersPerDegLon = metersPerDegLat * Math.cos(toRadians(line[i]!.latitude));
-    const dx = (next.longitude - prev.longitude) * metersPerDegLon;
-    const dy = (next.latitude - prev.latitude) * metersPerDegLat;
-    const length = Math.hypot(dx, dy) || 1;
-    const nx = -dy / length * halfWidthMeters;
-    const ny = dx / length * halfWidthMeters;
-    const point = line[i]!;
-    left.push({ latitude: point.latitude + ny / metersPerDegLat, longitude: point.longitude + nx / metersPerDegLon });
-    right.push({ latitude: point.latitude - ny / metersPerDegLat, longitude: point.longitude - nx / metersPerDegLon });
-  }
-  return [...left, ...right.reverse()];
 }

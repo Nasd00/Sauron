@@ -6,6 +6,7 @@ export const HELP_REPLY = [
   "WATCH <place> — subscribe to verified incidents near a place",
   "STATUS — show your current watch",
   "STOP — disable alerts",
+  "Or just text me what's going on and I'll help.",
   "HELP — show commands",
 ].join("\n");
 
