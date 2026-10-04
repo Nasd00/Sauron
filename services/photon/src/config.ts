@@ -41,7 +41,8 @@ export function loadConfig() {
     publicAppUrl: required("PUBLIC_APP_URL"),
     geocoderBaseUrl: process.env.GEOCODER_BASE_URL,
     geocoderUserAgent: required("GEOCODER_USER_AGENT"),
-    port: positiveNumber("PHOTON_PORT", 3001),
+    // Hosts like Railway assign the port through PORT.
+    port: positiveNumber("PHOTON_PORT", Number(process.env.PORT) || 3001),
     /** The help agent runs on Gemini; without a key it stays off. */
     geminiApiKey: process.env.GEMINI_API_KEY?.trim() || undefined,
     geminiModel: process.env.GEMINI_MODEL?.trim() || undefined,

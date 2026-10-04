@@ -8,6 +8,8 @@ node_modules/
 # Build / output
 dist/
 build/
+# The vendored Iris frontend keeps source (not output) in build/; its Vite config imports it.
+!apps/web/reference/build/
 out/
 .next/
 .turbo/

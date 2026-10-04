@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { createCommandRouter, watchConfirmation, WATCH_NOT_FOUND_REPLY } from "../src/router.js";
 import { MemoryMessagingStore } from "../src/store.js";
 import type { Geocoder } from "../src/types.js";
-import { normalizePhone, registerPhotonUser, RegistrationError, type SpectrumUserDirectory } from "../src/users.js";
+import { normalizePhone, parseRegistration, registerPhotonUser, RegistrationError, type SpectrumUserDirectory } from "../src/users.js";
 
 const place = { label: "Ann Arbor, Washtenaw County, Michigan, United States", latitude: 42.2808, longitude: -83.743 };
 const geocoder: Geocoder = { geocode: async query => query === "nowhere" ? null : place };
@@ -73,4 +73,27 @@ test("invalid input is rejected before Spectrum is called", async () => {
   );
   assert.deepEqual(calls, []);
   assert.equal(store.watches.length, 0);
+});
+
+test("a point picked on the web globe registers without geocoding, with its own radius", async () => {
+  const { directory, calls } = fakeDirectory();
+  const store = new MemoryMessagingStore();
+  const geocoded: string[] = [];
+  const input = parseRegistration({ phone: "+15551234567", latitude: 42.28, longitude: -83.74, label: "Grandma's house", radiusKm: 2.5 });
+  const result = await registerPhotonUser(directory, input, {
+    geocoder: { geocode: async query => { geocoded.push(query); return null; } }, store, radiusKm: 10,
+  });
+  assert.deepEqual(geocoded, []);
+  assert.equal(calls.length, 2, "user lookup and conversation");
+  assert.deepEqual([result.watch.placeLabel, result.watch.latitude, result.watch.longitude, result.watch.radiusKm],
+    ["Grandma's house", 42.28, -83.74, 2.5]);
+});
+
+test("registration bodies are validated", () => {
+  assert.deepEqual(parseRegistration({ phone: "+15551234567", place: "Ann Arbor" }), { phone: "+15551234567", place: "Ann Arbor" });
+  assert.throws(() => parseRegistration({ phone: "+15551234567" }), /place, or latitude/);
+  assert.throws(() => parseRegistration({ phone: "+1", latitude: 95, longitude: 0, label: "x" }), /valid coordinates/);
+  assert.throws(() => parseRegistration({ phone: "+1", latitude: 42, longitude: -83 }), /label is required/);
+  assert.throws(() => parseRegistration({ phone: "+1", place: "x", radiusKm: 500 }), /radiusKm/);
+  assert.throws(() => parseRegistration([]), RegistrationError);
 });

@@ -18,9 +18,10 @@ export default defineConfig(async context => {
   const upstream = typeof referenceConfig === "function"
     ? await referenceConfig(context) : referenceConfig;
   const dbOrigin = new URL(env.VITE_SPACETIMEDB_URI || "http://127.0.0.1:3000").origin;
+  const photonOrigin = env.VITE_PHOTON_URL ? new URL(env.VITE_PHOTON_URL).origin : "";
   const upstreamCsp = upstream.server?.headers?.["Content-Security-Policy"] as string;
   const headers = { ...upstream.server?.headers,
-    "Content-Security-Policy": upstreamCsp.replace("connect-src 'self'", `connect-src 'self' ${dbOrigin}`),
+    "Content-Security-Policy": upstreamCsp.replace("connect-src 'self'", `connect-src 'self' ${dbOrigin} ${photonOrigin}`.trimEnd()),
   };
   const config = mergeConfig(upstream, {
     root: referenceRoot,
