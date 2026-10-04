@@ -13,7 +13,7 @@ import { ValhallaRouter } from "./assist/routing.js";
 import { createShelterSource } from "./assist/shelters.js";
 import { createCommandRouter } from "./router.js";
 import { createMessagingStore } from "./store.js";
-import { registerPhotonUser, RegistrationError } from "./users.js";
+import { parseRegistration, registerPhotonUser, RegistrationError } from "./users.js";
 
 const config = loadConfig();
 const database = await connectDb({
@@ -105,7 +105,31 @@ function normalizedHeaders(headers: IncomingHttpHeaders): Record<string, string>
     value === undefined ? [] : [[key.toLowerCase(), Array.isArray(value) ? value.join(",") : value]]));
 }
 
+/**
+ * The web app enrolls phones from the globe, so /admin/users answers browser preflights from the
+ * app's own origin (and the local Vite dev server). The admin secret is still required.
+ */
+const corsOrigins = new Set(["http://localhost:5173", "http://127.0.0.1:5173"]);
+try { corsOrigins.add(new URL(config.publicAppUrl).origin); } catch { /* not a URL: only local dev origins */ }
+function corsHeaders(origin: string | undefined): Record<string, string> {
+  if (!origin || !corsOrigins.has(origin)) return {};
+  return {
+    "access-control-allow-origin": origin,
+    "access-control-allow-methods": "POST, OPTIONS",
+    "access-control-allow-headers": "authorization, content-type",
+    "access-control-max-age": "600",
+    vary: "Origin",
+  };
+}
+
 const server = createServer(async (request, response) => {
+  if (request.url === "/admin/users") {
+    for (const [name, value] of Object.entries(corsHeaders(request.headers.origin))) response.setHeader(name, value);
+    if (request.method === "OPTIONS") {
+      response.writeHead(204).end();
+      return;
+    }
+  }
   if (request.method === "GET" && request.url === "/health") {
     response.writeHead(200, { "content-type": "application/json" }).end('{"ok":true}');
     return;
@@ -131,13 +155,11 @@ const server = createServer(async (request, response) => {
   }
   if (request.url === "/admin/users") {
     try {
-      let body: { phone?: unknown; place?: unknown };
+      let body: unknown;
       try { body = JSON.parse(Buffer.concat(chunks).toString("utf8")); } catch {
         throw new RegistrationError("body must be JSON");
       }
-      if (typeof body.phone !== "string") throw new RegistrationError("phone is required");
-      if (typeof body.place !== "string") throw new RegistrationError("place is required");
-      const registered = await registerPhotonUser(userDirectory, { phone: body.phone, place: body.place }, {
+      const registered = await registerPhotonUser(userDirectory, parseRegistration(body), {
         geocoder, store, radiusKm: config.watchRadiusKm,
       });
       logger.info({ spaceId: registered.spaceId, watchId: registered.watch.id }, "photon_user_registered");

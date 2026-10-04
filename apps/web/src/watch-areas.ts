@@ -2,6 +2,7 @@ import * as Cesium from "cesium";
 import type { Watch } from "@tempmhacks/shared";
 import type { Db } from "@tempmhacks/shared/db";
 import { LiveState } from "./live-state";
+import { E164, enrollPhone, forgetOperatorSecret, operatorSecret } from "./photon-client";
 import "./watch-areas.css";
 
 type Navigation = { runImmediateNavigation(noun: string, navigate: () => void): void };
@@ -137,8 +138,8 @@ export function mountWatchAreas(
       <p class="watch-coords">${draft.latitude.toFixed(4)}, ${draft.longitude.toFixed(4)}</p>
       <label class="watch-label" for="watch-place">Area label</label>
       <input id="watch-place" class="watch-input" type="text" placeholder="e.g. Downtown" value="${escapeHtml(draft.label)}" />
-      <label class="watch-label" for="watch-handle">Notify (enrolled recipient ID)</label>
-      <input id="watch-handle" class="watch-input" type="text" placeholder="Recipient ID from alert enrollment" value="${escapeHtml(draft.handle)}" />
+      <label class="watch-label" for="watch-handle">Notify (phone or enrolled recipient ID)</label>
+      <input id="watch-handle" class="watch-input" type="text" placeholder="+15551234567" value="${escapeHtml(draft.handle)}" />
       <label class="watch-label" for="watch-radius">Radius: <span class="watch-radius-val">${draft.radiusKm} km</span></label>
       <input id="watch-radius" class="watch-range" type="range" min="${MIN_RADIUS_KM}" max="${MAX_RADIUS_KM}" step="0.5" value="${draft.radiusKm}" />
       <div class="watch-actions">
@@ -172,10 +173,12 @@ export function mountWatchAreas(
     const handle = draft.handle.trim();
     const err = errorText();
     if (!label) { if (err) err.textContent = "Add an area label."; return; }
-    if (!handle) { if (err) err.textContent = "Add an enrolled recipient ID to notify."; return; }
+    if (!handle) { if (err) err.textContent = "Add a phone number or enrolled recipient ID to notify."; return; }
     const profile = db.profiles.getForSender(handle) ?? db.profiles.get(handle);
     if (!profile) {
-      if (err) err.textContent = "Recipient not found. Enroll in alerts first, then use your recipient ID.";
+      // Someone new: Photon opens their iMessage conversation and creates the watch.
+      if (E164.test(handle)) return enroll(handle);
+      if (err) err.textContent = "Recipient not found. Enter a phone number like +15551234567 to enroll them.";
       return;
     }
     saving = true;
@@ -202,6 +205,41 @@ export function mountWatchAreas(
       renderCircles();
     } catch (error) {
       if (alive && err) err.textContent = error instanceof Error ? error.message : "Could not save area";
+    } finally {
+      saving = false;
+      if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = "Save area"; }
+    }
+  }
+
+  async function enroll(phone: string) {
+    if (!draft) return;
+    const err = errorText();
+    const photonUrl = import.meta.env.VITE_PHOTON_URL?.trim();
+    if (!photonUrl) {
+      if (err) err.textContent = "Set VITE_PHOTON_URL to enroll new phones from the map.";
+      return;
+    }
+    const secret = operatorSecret();
+    if (!secret) { if (err) err.textContent = "An operator key is needed to enroll a phone."; return; }
+    saving = true;
+    if (err) err.textContent = "";
+    const saveBtn = form.querySelector<HTMLButtonElement>(".watch-save");
+    if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = "Enrolling…"; }
+    try {
+      const result = await enrollPhone(photonUrl, secret, {
+        phone, latitude: draft.latitude, longitude: draft.longitude, label: draft.label.trim(), radiusKm: draft.radiusKm,
+      });
+      if (!alive) return;
+      if (!result.ok) {
+        if (result.reason === "unauthorized") forgetOperatorSecret();
+        if (err) err.textContent = result.message;
+        return;
+      }
+      // Photon writes the watch; the subscription streams it back as a saved circle.
+      draft = undefined;
+      form.hidden = true;
+      renderCircles();
+      window.alert(`Enrolled ${result.phone}. They've been texted a confirmation.`);
     } finally {
       saving = false;
       if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = "Save area"; }
