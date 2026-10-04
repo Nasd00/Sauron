@@ -43,15 +43,28 @@ The incident and CV-process commands remain safe placeholders until those
 workstreams supply their long-running processes. `demo:reset` is implemented
 (see the iMessage runbook below).
 
-## Photon iMessage and alerts
+## Running the backend
 
-The Photon service uses Spectrum's managed iMessage provider only. It accepts
-native Spectrum webhooks at `POST /spectrum/webhook`, passes the exact request
-bytes to Spectrum for HMAC verification, durably claims each Photon message ID,
-and then runs the deterministic command router. The SDK acknowledges webhooks
-before the command callback runs.
+The backend path for iMessage is three long-running processes plus a public
+HTTPS tunnel to Photon:
 
-Set these values in the ignored `.env` file:
+| Process | Command | Port / role |
+| --- | --- | --- |
+| SpacetimeDB (local) | `spacetime start --listen-addr 127.0.0.1:3000` | `3000` — database |
+| Photon | `npm run dev:photon` | `PHOTON_PORT` (default `3001`) — Spectrum webhook + commands |
+| Alerts | `npm run dev:alerts` | no HTTP port — watches DB and sends proactive iMessages |
+| ngrok | `ngrok http 3001` | public HTTPS → Photon |
+
+Use **four terminals** from the repo root (or skip the local SpacetimeDB
+terminal if you point `.env` at a hosted maincloud database).
+
+### 1. Configure `.env`
+
+```sh
+cp .env.example .env
+```
+
+Minimum for local backend + iMessage:
 
 ```sh
 SPECTRUM_PROJECT_ID=
@@ -64,17 +77,113 @@ VITE_SPACETIMEDB_DATABASE=tempmhacks-local
 WATCH_RADIUS_KM=10
 PUBLIC_APP_URL=https://your-public-web-app.example
 GEOCODER_USER_AGENT=Downwind/0.1 (contact: you@example.com)
+PHOTON_PORT=3001
 ```
 
-Publish the current SpacetimeDB module, start the Photon service, and expose its
-port over public HTTPS. Configure the resulting URL in Photon as
-`https://your-service.example/spectrum/webhook`:
+For hosted SpacetimeDB, set `SPACETIMEDB_URI`, `SPACETIMEDB_DATABASE`, and
+`SPACETIMEDB_TOKEN` instead of the local URI. Legacy `PHOTON_PROJECT_ID` /
+`PHOTON_SECRET` aliases are also accepted.
+
+### 2. Start SpacetimeDB and publish the module
+
+Install the [SpacetimeDB CLI](https://spacetimedb.com/install) **2.10.2**, then:
 
 ```sh
-npm run db:publish
+# terminal A — local DB only
+spacetime start --listen-addr 127.0.0.1:3000
+```
+
+```sh
+# terminal B — once per schema change
+npm run db:publish          # local
+# or
+npm run db:publish:maincloud # hosted (after: spacetime login --token "$SPACETIMEDB_TOKEN")
+```
+
+Seed demo data when needed:
+
+```sh
+npm run demo:seed:cameras       # local CLI
+npm run demo:seed:cameras:sdk   # hosted / SDK path
+```
+
+### 3. Start Photon and alerts
+
+```sh
+# terminal B
 npm run dev:photon
+```
+
+```sh
+# terminal C
 npm run dev:alerts
 ```
+
+Photon should log that it is listening on `/spectrum/webhook`. Alerts has no
+HTTP listener; it subscribes to SpacetimeDB and sends iMessages when confirmed
+incidents match active watches / location profiles.
+
+### 4. Expose Photon with ngrok
+
+Photon must be reachable on public HTTPS so Spectrum can POST webhooks.
+
+1. Install the [ngrok agent](https://ngrok.com/download) and authenticate once
+   (`ngrok config add-authtoken <token>` from the ngrok dashboard).
+2. In a fourth terminal, forward Photon:
+
+```sh
+# ephemeral URL (changes every restart)
+ngrok http 3001
+```
+
+If you have a reserved free domain:
+
+```sh
+ngrok http --url=<your-subdomain>.ngrok-free.dev 3001
+```
+
+Use the same port as `PHOTON_PORT` (default `3001`).
+
+3. Copy the `https://…` forwarding URL from the ngrok UI (or
+   `http://127.0.0.1:4040`).
+4. In the Photon / Spectrum dashboard, set the webhook to:
+
+```text
+https://<your-ngrok-host>/spectrum/webhook
+```
+
+5. Set the dashboard signing secret to the same value as `SPECTRUM_WEBHOOK_SECRET`
+   in `.env`. Restart `npm run dev:photon` after any secret change.
+
+Notes:
+
+- Free ngrok may show an interstitial browser page; Spectrum webhooks are server
+  POSTs and normally bypass that. If verification fails, confirm the path is
+  exactly `/spectrum/webhook` and the signing secret matches.
+- Restarting ngrok without a reserved domain changes the public URL — update
+  the Photon dashboard each time.
+- Local inspector: `http://127.0.0.1:4040` shows request/response history.
+- `cloudflared tunnel --url http://localhost:3001` works as an alternative if
+  you prefer Cloudflare over ngrok.
+
+### 5. Smoke-test
+
+```sh
+npm run photon:send-test -- +15551234567
+```
+
+Then text the project line `HELP`, share a location from Apple Maps, or
+`WATCH Ann Arbor`. Seed a confirmed incident with
+`npm run demo:seed:incident` to exercise alerts. Reset between runs with
+`npm run demo:reset`.
+
+## Photon iMessage and alerts
+
+The Photon service uses Spectrum's managed iMessage provider only. It accepts
+native Spectrum webhooks at `POST /spectrum/webhook`, passes the exact request
+bytes to Spectrum for HMAC verification, durably claims each Photon message ID,
+and then runs the deterministic command router. The SDK acknowledges webhooks
+before the command callback runs.
 
 Supported iMessage commands are `STATUS`, `HELP`, `STOP`, and `WATCH <place>`,
 plus sharing a location from Apple Maps and natural follow-up questions after an
@@ -148,7 +257,8 @@ endpoint without a code change. Geocoding data © OpenStreetMap contributors.
 ### Runbook: run the iMessage flow end to end
 
 This is the verified path for bringing the inbound command flow and proactive
-alerts online, including against a hosted SpacetimeDB (maincloud) database.
+alerts online, including against a hosted SpacetimeDB (maincloud) database. For
+the shorter day-to-day steps, see [Running the backend](#running-the-backend).
 
 1. **Configure `.env`.** For a hosted database, set `SPACETIMEDB_URI`,
    `SPACETIMEDB_DATABASE`, and `SPACETIMEDB_TOKEN` (maincloud requires the
@@ -170,14 +280,16 @@ alerts online, including against a hosted SpacetimeDB (maincloud) database.
 4. **Start the services:** `npm run dev:photon` (webhook on `PHOTON_PORT`,
    default 3001) and `npm run dev:alerts`.
 
-5. **Expose the webhook over public HTTPS.** For example
-   `cloudflared tunnel --url http://localhost:3001`. The quick-tunnel URL
-   changes on each restart.
+5. **Expose the webhook with ngrok:**
+   `ngrok http 3001` (or
+   `ngrok http --url=<your-subdomain>.ngrok-free.dev 3001` with a reserved
+   domain). Confirm forwarding in the ngrok UI or at `http://127.0.0.1:4040`.
 
 6. **Point Photon at the tunnel.** In the Photon dashboard, set the webhook to
-   `https://<tunnel>/spectrum/webhook` and make the dashboard signing secret
+   `https://<ngrok-host>/spectrum/webhook` and make the dashboard signing secret
    match `SPECTRUM_WEBHOOK_SECRET` in `.env`. Restart `dev:photon` after any
-   secret change.
+   secret change. Update the dashboard URL whenever an ephemeral ngrok host
+   changes.
 
 7. **Drive the flow.** From an added phone, text the project's line:
    `HELP`, `WATCH Ann Arbor`, `STATUS`, `STOP`. Then seed a confirmed incident
