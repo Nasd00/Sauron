@@ -12,6 +12,6 @@
   "dependencies": {
     "@tempmhacks/shared": "*",
     "spectrum-ts": "12.10.1",
-    "zod": "4.2.1"
+    "zod": "4.6.5"
   }
 }
