@@ -69,6 +69,16 @@ env/
 *.local
 .direnv/
 
-# Downloadable demo media (see README for the reproducible source)
+# Downloadable demo media
 fixtures/demo/*.mp4
 !fixtures/demo/.gitkeep
+apps/web/certs/
+
+# Markdown documentation
+*.md
+*.MD
+
+# Local browser artifacts and provider caches
+.playwright-mcp/
+.iris-cache/
+.iris-logs/

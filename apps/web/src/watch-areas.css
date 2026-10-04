@@ -1,0 +1,27 @@
+/* The toggle lives in the header (relocated by minimal-ui) and inherits the
+   header's white bracketed button style; no custom button coloring here. The
+   .watch-ui wrapper only hosts the draft form popup. */
+.watch-ui { position: fixed; right: 20px; top: 70px; z-index: 130; font: 11px "JetBrains Mono", monospace; }
+body.clean-view .watch-ui { display: none; }
+
+.watch-form { width: min(300px, calc(100vw - 40px)); padding: 14px; color: #e6e4dc; background: rgba(12, 12, 11, .97); border: 1px solid #3a3934; border-radius: 0; backdrop-filter: blur(14px); }
+.watch-form-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.watch-form-head strong { letter-spacing: .18em; color: #f2f1ec; font-size: 12px; }
+.watch-close { color: #9a988f; background: transparent; border: none; cursor: pointer; font-size: 14px; }
+.watch-close:hover { color: #fff; }
+.watch-coords { margin: 0 0 12px; color: #9a988f; font-size: 11px; }
+.watch-label { display: block; margin: 10px 0 5px; color: #9a988f; letter-spacing: .08em; text-transform: uppercase; font-size: 10px; }
+.watch-radius-val { color: #f2f1ec; text-transform: none; letter-spacing: 0; }
+.watch-input { width: 100%; padding: 9px 10px; color: #e6e4dc; background: #070707; border: 1px solid #3a3934; border-radius: 0; font: inherit; font-size: 12px; }
+.watch-input:focus { outline: none; border-color: #f2f1ec; }
+.watch-range { width: 100%; accent-color: #f2f1ec; margin-top: 4px; }
+.watch-actions { display: flex; gap: 8px; margin-top: 14px; }
+.watch-actions button { flex: 1; padding: 10px; border-radius: 0; cursor: pointer; font: inherit; font-weight: 600; }
+.watch-save { color: #0a0a0a; background: #f2f1ec; border: 1px solid #f2f1ec; }
+.watch-save:hover { background: #fff; }
+.watch-save:disabled { opacity: .5; cursor: wait; }
+.watch-cancel { color: #e6e4dc; background: #151513; border: 1px solid #3a3934; }
+.watch-cancel:hover { border-color: #9a988f; }
+.watch-error { margin: 10px 0 0; color: #ff5b4f; min-height: 14px; white-space: pre-wrap; }
+.watch-note { margin: 10px 0 0; color: #5e5c56; line-height: 1.5; font-size: 10px; }
+@media (max-width: 600px) { .watch-ui { right: 8px; top: 64px; } }

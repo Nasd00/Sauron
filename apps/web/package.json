@@ -6,13 +6,31 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "db:generate": "spacetime generate --lang typescript --out-dir src/module_bindings --module-path ../../spacetimedb",
+    "test": "tsx --test tests/*.test.ts"
   },
   "dependencies": {
     "@tempmhacks/shared": "*",
-    "cesium": "^1.146.0"
+    "cesium": "^1.146.0",
+    "@jtarrio/signals": "^0.10.0",
+    "@jtarrio/webrtlsdr": "^3.0.6",
+    "@mapbox/vector-tile": "^3.0.0",
+    "@meri-imperiumi/eccodes-wasm": "^2.48.2",
+    "egm96-universal": "^1.1.1",
+    "hls.js": "^1.7.3",
+    "mgrs": "^2.1.0",
+    "pbf": "^5.1.2",
+    "qrcode": "^1.5.4",
+    "satellite.js": "^6.0.2",
+    "spacetimedb": "2.10.2"
   },
   "devDependencies": {
-    "vite": "^8.3.2"
+    "vite": "^8.3.2",
+    "vite-plugin-cesium": "^1.2.23",
+    "ws": "^8.21.0",
+    "sharp": "^0.35.4",
+    "@types/qrcode": "^1.5.5"
   }
 }

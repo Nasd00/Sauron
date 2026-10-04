@@ -1,0 +1,19 @@
+.sauron-panel { position: fixed; right: 18px; bottom: 28px; z-index: 120; width: 310px; max-height: 55vh; overflow: auto; padding: 14px; color: #dce5ed; background: rgba(8, 14, 21, .94); border: 1px solid #34424f; border-radius: 8px; font: 11px "JetBrains Mono", monospace; backdrop-filter: blur(14px); }
+.sauron-panel header { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+.sauron-panel strong { letter-spacing: .2em; color: #50d9e8; }
+.sauron-status { font-size: 9px; color: #96abbc; }
+.sauron-layers { display: flex; flex-wrap: wrap; gap: 10px; margin: 14px 0; }
+.sauron-panel input { accent-color: #50d9e8; }
+.sauron-panel button { color: inherit; background: #14202b; border: 1px solid #34424f; border-radius: 4px; padding: 8px; cursor: pointer; font: inherit; }
+.sauron-panel button:hover { border-color: #50d9e8; }
+.sauron-panel button:disabled { opacity: .5; cursor: wait; }
+.sauron-feed { display: grid; gap: 6px; color: #96abbc; }
+.sauron-feed button { text-align: left; }
+.sauron-detail:not(:empty) { margin-top: 12px; padding-top: 10px; border-top: 1px solid #34424f; }
+.sauron-detail p { margin: 10px 0; line-height: 1.6; }
+.sauron-detail button { margin: 4px; }
+.sauron-detail img { display: block; width: 100%; margin-top: 10px; border-radius: 4px; }
+.sauron-detail a { color: #50d9e8; }
+.sauron-error { color: #ff8b83; white-space: pre-wrap; }
+body.clean-view .sauron-panel { display: none; }
+@media (max-width: 600px) { .sauron-panel { right: 8px; bottom: 20px; width: min(310px, calc(100vw - 32px)); max-height: 35vh; } }
