@@ -80,6 +80,7 @@ apps/web/certs/
 # Markdown documentation
 *.md
 *.MD
+!README.md
 !apps/ios/README.md
 
 # Local browser artifacts and provider caches
