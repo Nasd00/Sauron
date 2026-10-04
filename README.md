@@ -243,6 +243,27 @@ layer.
 Set `PUBLIC_APP_URL` for the Photon service as well (used to build incident deep
 links in grounded answers).
 
+### Help agent (optional, Gemini)
+
+With `GEMINI_API_KEY` set, Photon also answers texts that no command or grounded
+follow-up covers ("my power's out and my mom needs oxygen", "where's the nearest
+urgent care?", "we need to leave, 3 of us and a dog"). A Gemini agent replies in
+short texts and uses tools for every fact: the person's situation (location and
+nearby confirmed incidents), ranked shelters with routes that avoid incident
+areas, driving directions, and nearby places from OpenStreetMap. It never invents
+addresses or numbers beyond 911, 211, 988 and Poison Control, and puts "call 911"
+first when something sounds life-threatening. When an incident is newly
+confirmed within `ASSIST_RADIUS_KM` (default 3 km) of someone, it sends one text
+checking that they're safe and offering help.
+
+Commands, location shares and grounded answers keep priority. Once someone is
+talking with the agent, their other texts go to it until they send `STOP` or go
+quiet for 6 hours. Conversations are held in memory. If the model errors or
+declines, the person gets a fixed "call 911 / call 211" reply. Without the key,
+Photon behaves exactly as described above. `GEMINI_MODEL` overrides the default
+`gemini-flash-latest`; `ASSIST_DEMO_SHELTERS=0` drops the labeled Ann Arbor demo
+shelters and keeps only live FEMA open shelters.
+
 Alert links use `/incident/:incidentId`. The web app connects with the two
 `VITE_SPACETIMEDB_*` values, selects and focuses that exact incident, retains
 resolved incident details, and shows explicit not-found or retryable database

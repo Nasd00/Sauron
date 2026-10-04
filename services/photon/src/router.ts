@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { ConversationContext, UserAlertProfile, Watch } from "@tempmhacks/shared";
 import { evaluateLocationFreshness } from "@tempmhacks/shared/geo";
 import { answerFollowUp, classifyFollowUp, type GroundedContext } from "./answer.js";
+import type { HelpAgent, Person } from "./assist/agent.js";
 import { classifyLocationShare, type ParsedLocation } from "./location.js";
 import type { Geocoder, InboundMessage, MessagingStore, NativeShareKind } from "./types.js";
 
@@ -63,6 +64,11 @@ export type CommandRouterOptions = {
   radiusKm: number;
   /** Base URL for building incident deep links in grounded answers. */
   publicAppUrl: string;
+  /**
+   * Optional help agent. When set, it answers texts no command or grounded answer covers, and
+   * keeps answering someone mid-conversation (commands and location shares still come first).
+   */
+  assistant?: Pick<HelpAgent, "isActive" | "end" | "reply">;
   now?: () => number;
   id?: () => string;
 };
@@ -138,6 +144,30 @@ export function createCommandRouter(options: CommandRouterOptions) {
     return { text: NO_LOCATION_REPLIES[reason] };
   }
 
+  /** Where the person is for the help agent: a fresh shared location, else their watch, else a stale share. */
+  async function personFor(message: InboundMessage): Promise<Person> {
+    const [profile, watch] = await Promise.all([
+      options.store.getProfileForSender(message.senderId),
+      options.store.getActiveWatch(message.senderId),
+    ]);
+    const base = { senderId: message.senderId, spaceId: message.spaceId };
+    const shared = profile?.alertsEnabled ? profile : undefined;
+    const { fresh, ageMs } = shared ? freshness(shared) : { fresh: false, ageMs: 0 };
+    if (shared && (fresh || !watch)) {
+      return {
+        ...base,
+        place: `the location they shared from Apple Maps ${formatAge(ageMs)}${fresh ? "" : " (out of date)"}`,
+        location: { latitude: shared.latitude, longitude: shared.longitude },
+      };
+    }
+    if (watch) return { ...base, place: `${watch.placeLabel} (set with WATCH)`, location: { latitude: watch.latitude, longitude: watch.longitude } };
+    return base;
+  }
+
+  async function askAssistant(message: InboundMessage, input: string): Promise<RouterReply> {
+    return { text: await options.assistant!.reply(await personFor(message), input) };
+  }
+
   async function handleText(message: InboundMessage, input: string): Promise<RouterReply | undefined> {
     // Safety/control commands intentionally remain ahead of everything else.
     if (/^STOP$/i.test(input)) {
@@ -149,6 +179,7 @@ export function createCommandRouter(options: CommandRouterOptions) {
       const profile = await options.store.getProfileForSender(message.senderId);
       if (profile) await options.store.setAlertsEnabled(profile.userId, false);
       await options.store.clearConversationContext(message.spaceId);
+      options.assistant?.end(message.senderId);
       return { text: STOP_REPLY };
     }
     // Alerts are always on while I have a location; there is no pause toggle.
@@ -209,13 +240,18 @@ export function createCommandRouter(options: CommandRouterOptions) {
       return { text: watchConfirmation(watch) };
     }
 
+    // Mid-conversation, the help agent keeps the thread (it can look up incident facts itself).
+    if (options.assistant?.isActive(message.senderId)) return askAssistant(message, input);
+
     // Grounded follow-up Q&A anchored on the conversation's active incident.
     const intent = classifyFollowUp(input);
     if (intent) {
       const reply = await answerGroundedFollowUp(message, intent);
       if (reply) return reply;
+      if (options.assistant) return askAssistant(message, input);
       return { text: NO_ACTIVE_INCIDENT_REPLY };
     }
+    if (options.assistant) return askAssistant(message, input);
 
     // Fallback doubles as onboarding and as a location-state reminder, so the user
     // always knows whether I currently have a usable location for them.

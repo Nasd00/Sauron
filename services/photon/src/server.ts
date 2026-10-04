@@ -1,4 +1,5 @@
 import { createServer, type IncomingHttpHeaders } from "node:http";
+import { GoogleGenAI } from "@google/genai";
 import { Spectrum } from "spectrum-ts";
 import { imessage } from "@spectrum-ts/imessage";
 import { connectDb } from "@tempmhacks/shared/db";
@@ -7,6 +8,9 @@ import { loadConfig } from "./config.js";
 import { NominatimGeocoder } from "./geocoder.js";
 import { normalizeSpectrumMessage } from "./normalize.js";
 import { createMessageProcessor } from "./processor.js";
+import { HelpAgent, type Person } from "./assist/agent.js";
+import { ValhallaRouter } from "./assist/routing.js";
+import { createShelterSource } from "./assist/shelters.js";
 import { createCommandRouter } from "./router.js";
 import { createMessagingStore } from "./store.js";
 import { registerPhotonUser, RegistrationError } from "./users.js";
@@ -33,14 +37,67 @@ const geocoder = new NominatimGeocoder({
   baseUrl: config.geocoderBaseUrl,
   userAgent: config.geocoderUserAgent,
 });
-const route = createCommandRouter({
-  store, geocoder, radiusKm: config.watchRadiusKm, publicAppUrl: config.publicAppUrl,
-});
 const messenger = createImessageMessenger(spectrumApp);
 const logger = {
   info: (fields: Record<string, unknown>, message: string) => console.info(JSON.stringify({ level: "info", message, ...fields })),
   error: (fields: Record<string, unknown>, message: string) => console.error(JSON.stringify({ level: "error", message, ...fields })),
 };
+// Without a Gemini key photon runs exactly as before, with no help agent.
+// Short retries ride out brief overloads; anything longer gets the fixed fallback reply instead of a slow text.
+const gemini = config.geminiApiKey
+  ? new GoogleGenAI({ apiKey: config.geminiApiKey, httpOptions: { retryOptions: { attempts: 3, initialDelay: 1, maxDelay: 4 } } })
+  : undefined;
+const helpAgent = gemini
+  ? new HelpAgent({
+    generate: params => gemini.models.generateContent(params),
+    model: config.geminiModel,
+    tools: {
+      router: new ValhallaRouter({ userAgent: config.geocoderUserAgent }),
+      shelters: createShelterSource({
+        demo: config.assistDemoShelters,
+        onError: error => logger.error({ error: String(error) }, "fema_shelters_unavailable"),
+      }),
+      dangerRadiusKm: config.assistRadiusKm,
+      userAgent: config.geocoderUserAgent,
+    },
+    send: (spaceId, text) => messenger.sendText(spaceId, text),
+    radiusKm: config.assistRadiusKm,
+    logger,
+  })
+  : undefined;
+/** Everyone photon can reach with a location: shared Apple Maps locations win over watches. */
+function knownPeople(): Person[] {
+  const people = new Map<string, Person>();
+  for (const watch of database.db.watches.listActive()) {
+    people.set(watch.senderId, {
+      senderId: watch.senderId, spaceId: watch.spaceId, place: `${watch.placeLabel} (set with WATCH)`,
+      location: { latitude: watch.latitude, longitude: watch.longitude },
+    });
+  }
+  for (const profile of database.db.profiles.list()) {
+    if (!profile.alertsEnabled) continue;
+    people.set(profile.senderId, {
+      senderId: profile.senderId, spaceId: profile.spaceId, place: "the location they shared from Apple Maps",
+      location: { latitude: profile.latitude, longitude: profile.longitude },
+    });
+  }
+  return [...people.values()];
+}
+if (helpAgent) {
+  // The subscription doesn't replay existing rows: incidents confirmed before startup inform answers
+  // silently, and only newly confirmed ones prompt an offer of help.
+  helpAgent.loadIncidents(database.db.incidents.listConfirmed());
+  database.db.incidents.subscribe(incident => {
+    if (incident.status !== "confirmed") return;
+    helpAgent.onIncident(incident, knownPeople())
+      .catch(error => logger.error({ incidentId: incident.id, error: String(error) }, "help_agent_incident_failed"));
+  });
+} else {
+  logger.info({}, "help_agent_disabled: set GEMINI_API_KEY to enable");
+}
+const route = createCommandRouter({
+  store, geocoder, radiusKm: config.watchRadiusKm, publicAppUrl: config.publicAppUrl, assistant: helpAgent,
+});
 const processMessage = createMessageProcessor({ store, route, logger });
 
 function normalizedHeaders(headers: IncomingHttpHeaders): Record<string, string> {

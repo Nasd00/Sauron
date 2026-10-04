@@ -42,5 +42,12 @@ export function loadConfig() {
     geocoderBaseUrl: process.env.GEOCODER_BASE_URL,
     geocoderUserAgent: required("GEOCODER_USER_AGENT"),
     port: positiveNumber("PHOTON_PORT", 3001),
+    /** The help agent runs on Gemini; without a key it stays off. */
+    geminiApiKey: process.env.GEMINI_API_KEY?.trim() || undefined,
+    geminiModel: process.env.GEMINI_MODEL?.trim() || undefined,
+    /** People this close to a newly confirmed incident are offered help. */
+    assistRadiusKm: positiveNumber("ASSIST_RADIUS_KM", 3),
+    /** Offer the labeled Ann Arbor demo shelters alongside live FEMA open shelters. */
+    assistDemoShelters: process.env.ASSIST_DEMO_SHELTERS?.trim() !== "0",
   };
 }
