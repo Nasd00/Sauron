@@ -2,6 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>IrisWebAppURL</key>
+	<string>$(IRIS_WEB_APP_URL)</string>
+	<key>PhotonAPIBaseURL</key>
+	<string>$(PHOTON_API_URL)</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -15,15 +19,28 @@
 	</array>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Sauron uses your location in the background to keep your incident watch current when you move, so iMessage alerts match where you are.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Sauron uses your location to keep your incident watch current, so iMessage alerts match where you are.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
-	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>Sauron uses your location in the background to keep your incident watch current when you move, so iMessage alerts match where you are.</string>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Sauron uses your location to keep your incident watch current, so iMessage alerts match where you are.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Iris connects to the development map server on your Mac when testing on a physical iPhone.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Iris uses the microphone when you turn on the voice assistant so you can control the map and ask questions hands-free.</string>
+	<key>UILaunchScreen</key>
+	<dict>
+		<key>UIColorName</key>
+		<string>LaunchBackground</string>
+		<key>UIImageName</key>
+		<string>IrisLaunchLogo</string>
+		<key>UIImageRespectsSafeAreaInsets</key>
+		<true/>
+	</dict>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>location</string>

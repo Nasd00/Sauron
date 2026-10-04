@@ -14,7 +14,7 @@ import { createShelterSource } from "./assist/shelters.js";
 import { createMobileApi, createMobileHttpHandler, createMobileStore } from "./mobile.js";
 import { createCommandRouter } from "./router.js";
 import { createMessagingStore } from "./store.js";
-import { parseRegistration, registerPhotonUser, RegistrationError } from "./users.js";
+import { normalizePhone, parseRegistration, registerPhotonUser, RegistrationError } from "./users.js";
 
 const config = loadConfig();
 const database = await connectDb({
@@ -104,6 +104,20 @@ const processMessage = createMessageProcessor({ store, route, logger });
 const handleMobile = createMobileHttpHandler({
   api: createMobileApi({
     store: createMobileStore(database.db), radiusKm: config.watchRadiusKm,
+    resolveRegistration: async phone => {
+      const user = await userDirectory.user(normalizePhone(phone));
+      const [profile, watch] = await Promise.all([
+        store.getProfileForSender(user.id),
+        store.getActiveWatch(user.id),
+      ]);
+      const registration = profile?.alertsEnabled ? profile : watch;
+      if (!registration) return undefined;
+      return {
+        userId: profile?.alertsEnabled ? profile.userId : user.id,
+        spaceId: registration.spaceId,
+        senderId: user.id,
+      };
+    },
     onUnexpectedError: (route, error) => logger.error({ route, error: String(error) }, "mobile_api_backend_error"),
   }),
   publicBaseUrl: config.mobilePairingBaseUrl,
@@ -123,7 +137,12 @@ function normalizedHeaders(headers: IncomingHttpHeaders): Record<string, string>
  * The web app enrolls phones from the globe, so /admin/users answers browser preflights from the
  * app's own origin (and the local Vite dev server). The admin secret is still required.
  */
-const corsOrigins = new Set(["http://localhost:5173", "http://127.0.0.1:5173"]);
+const corsOrigins = new Set([
+  "http://localhost:4173",
+  "http://127.0.0.1:4173",
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+]);
 try { corsOrigins.add(new URL(config.publicAppUrl).origin); } catch { /* not a URL: only local dev origins */ }
 function corsHeaders(origin: string | undefined): Record<string, string> {
   if (!origin || !corsOrigins.has(origin)) return {};

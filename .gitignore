@@ -80,6 +80,7 @@ apps/web/certs/
 # Markdown documentation
 *.md
 *.MD
+!apps/ios/README.md
 
 # Local browser artifacts and provider caches
 .playwright-mcp/

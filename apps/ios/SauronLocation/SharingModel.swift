@@ -39,6 +39,7 @@ final class SharingModel: ObservableObject, LocationProviderDelegate {
     private let credentials: CredentialStoring
     private let settings: SharingSettings
     private let makeAPI: (URL) -> MobileAPI
+    private let defaultAPIBaseURL: URL?
     private let policy: UploadPolicy
     private let now: () -> Date
     private let backgroundTask: (@escaping () async -> Void) async -> Void
@@ -52,6 +53,7 @@ final class SharingModel: ObservableObject, LocationProviderDelegate {
         location: LocationProviding,
         credentials: CredentialStoring,
         settings: SharingSettings,
+        defaultAPIBaseURL: URL? = MobileAppConfiguration.apiBaseURL,
         makeAPI: @escaping (URL) -> MobileAPI = { MobileAPIClient(baseURL: $0) },
         policy: UploadPolicy = UploadPolicy(),
         now: @escaping () -> Date = Date.init,
@@ -60,6 +62,7 @@ final class SharingModel: ObservableObject, LocationProviderDelegate {
         self.location = location
         self.credentials = credentials
         self.settings = settings
+        self.defaultAPIBaseURL = defaultAPIBaseURL
         self.makeAPI = makeAPI
         self.policy = policy
         self.now = now
@@ -122,19 +125,7 @@ final class SharingModel: ObservableObject, LocationProviderDelegate {
         defer { isPairing = false }
         do {
             let response = try await makeAPI(link.apiBaseURL).pair(token: link.token)
-            let newCredential = DeviceCredential(
-                deviceId: response.deviceId, deviceToken: response.deviceToken, apiBaseURL: link.apiBaseURL
-            )
-            try credentials.save(newCredential)
-            // A new pairing starts clean: no upload anchor from a previous association.
-            location.stopUpdates()
-            settings.reset()
-            credential = newCredential
-            lastUpload = nil
-            setTrackingActive(response.trackingActive)
-            pendingLink = nil
-            message = nil
-            await startSharing()
+            try await acceptPairing(response, apiBaseURL: link.apiBaseURL)
         } catch let error as MobileAPIError {
             pendingLink = nil
             message = Self.pairingMessage(error)
@@ -144,11 +135,71 @@ final class SharingModel: ObservableObject, LocationProviderDelegate {
         }
     }
 
+    /// Pairs an already enrolled phone directly from the app. The server refuses
+    /// unknown or unsubscribed numbers, so registration still happens first.
+    func pairRegistered(phone: String) async {
+        guard !isPairing else { return }
+        guard let apiBaseURL = defaultAPIBaseURL else {
+            message = "Sauron’s location service isn’t configured in this build."
+            return
+        }
+        let phone = Self.normalizedPhone(phone)
+        guard Self.isE164(phone) else {
+            message = "Enter a valid phone number, including the country code."
+            return
+        }
+        isPairing = true
+        message = nil
+        defer { isPairing = false }
+        do {
+            let response = try await makeAPI(apiBaseURL).pairRegistered(phone: phone)
+            try await acceptPairing(response, apiBaseURL: apiBaseURL)
+        } catch MobileAPIError.registrationRequired {
+            message = "This phone isn’t registered with Sauron yet. Register it first, then try again."
+        } catch let error as MobileAPIError {
+            message = Self.pairingMessage(error)
+        } catch {
+            message = "Couldn’t pair this iPhone. Check your connection and try again."
+        }
+    }
+
+    static func normalizedPhone(_ raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let digits = trimmed.filter(\.isNumber)
+        if trimmed.hasPrefix("+") { return "+\(digits)" }
+        if digits.count == 10 { return "+1\(digits)" }
+        if digits.count == 11, digits.hasPrefix("1") { return "+\(digits)" }
+        return trimmed
+    }
+
+    private static func isE164(_ phone: String) -> Bool {
+        guard phone.first == "+" else { return false }
+        let digits = phone.dropFirst()
+        return (7...15).contains(digits.count) && digits.first != "0" && digits.allSatisfy(\.isNumber)
+    }
+
+    private func acceptPairing(_ response: PairResponse, apiBaseURL: URL) async throws {
+        let newCredential = DeviceCredential(
+            deviceId: response.deviceId, deviceToken: response.deviceToken, apiBaseURL: apiBaseURL
+        )
+        try credentials.save(newCredential)
+        // A new pairing starts clean and replaces any prior device association.
+        location.stopUpdates()
+        settings.reset()
+        credential = newCredential
+        lastUpload = nil
+        setTrackingActive(response.trackingActive)
+        pendingLink = nil
+        message = nil
+        await startSharing()
+    }
+
     static func pairingMessage(_ error: MobileAPIError) -> String {
         switch error {
         case .pairingUsed: return "That pairing link was already used. Text PAIR to Sauron for a new one."
         case .pairingExpired: return "That pairing link expired. Text PAIR to Sauron for a new one."
         case .pairingInvalid: return "That pairing link isn’t valid. Text PAIR to Sauron for a new one."
+        case .registrationRequired: return "This phone isn’t registered with Sauron yet. Register it first, then try again."
         case .network: return "Couldn’t reach Sauron. Check your connection and open the link again."
         default: return "Pairing failed. Text PAIR to Sauron for a new link."
         }
@@ -290,7 +341,7 @@ final class SharingModel: ObservableObject, LocationProviderDelegate {
             if wantsSharing { location.reduceToSignificantChanges() }
         case .unauthorized:
             unpair()
-            message = "This iPhone is no longer paired. Text WATCH ME to Sauron for a new link."
+            message = "This iPhone is no longer paired. Pair again here, or text PAIR to Sauron for a reset link."
         case .locationRejected:
             break // Low-quality or out-of-range fix; the next one is evaluated fresh.
         case .network, .server, .invalidResponse:

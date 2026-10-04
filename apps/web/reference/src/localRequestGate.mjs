@@ -76,7 +76,8 @@ function requestAuthority(hostHeader, protocol) {
  * to admit. Pure: no I/O, no globals.
  *
  * Policy, in order:
- *  1. any reverse-proxy / CDN signal header present (PROXY_SIGNALS) → 403;
+ *  1. proxy signals → 403, except an explicitly configured HTTPS origin with
+ *     a matching Host and same-origin browser metadata;
  *  2. `Sec-Fetch-Site` present and not `same-origin` / `none` → 403 (this is
  *     what blocks `<img src=...>` and cross-site navigation, which carry no
  *     Origin but do carry `Sec-Fetch-Site: cross-site`);
@@ -87,7 +88,7 @@ function requestAuthority(hostHeader, protocol) {
  *  4. otherwise ok. Non-browser loopback tools and the LAN opt-in (which may
  *     carry neither `Origin` nor `Sec-Fetch-Site`) pass here.
  *
- * @param {{hostHeader?: string, protocol?: string, origin?: string, secFetchSite?: string, proxyHeaders?: Record<string,string>}} req
+ * @param {{hostHeader?: string, protocol?: string, origin?: string, secFetchSite?: string, proxyHeaders?: Record<string,string>, trustedProxyOrigin?: string}} req
  * @returns {{ok: true} | {ok: false, status: 403, error: string}}
  */
 export function admitSameSiteRequest({
@@ -96,10 +97,18 @@ export function admitSameSiteRequest({
   origin,
   secFetchSite,
   proxyHeaders = {},
+  trustedProxyOrigin,
 } = {}) {
   // (1) A request carrying reverse-proxy / CDN forwarding headers did not
   // originate on this machine, whatever its socket says.
-  if (hasProxySignals(proxyHeaders)) {
+  const isProxied = hasProxySignals(proxyHeaders);
+  const trustedProxy = isProxied &&
+    typeof trustedProxyOrigin === 'string' &&
+    trustedProxyOrigin.startsWith('https://') &&
+    requestAuthority(hostHeader, 'https:') === trustedProxyOrigin &&
+    proxyHeaders['x-forwarded-proto'] === 'https' &&
+    (origin === trustedProxyOrigin || secFetchSite === 'same-origin');
+  if (isProxied && !trustedProxy) {
     return {
       ok: false,
       status: 403,
@@ -128,7 +137,7 @@ export function admitSameSiteRequest({
         error: 'Opaque origins are not accepted',
       };
     }
-    const authority = requestAuthority(hostHeader, protocol);
+    const authority = trustedProxy ? trustedProxyOrigin : requestAuthority(hostHeader, protocol);
     let parsedOrigin;
     try {
       parsedOrigin = new URL(String(origin));

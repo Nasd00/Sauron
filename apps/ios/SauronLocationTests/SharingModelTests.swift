@@ -28,8 +28,13 @@ final class FakeAPI: MobileAPI {
     var trackingActive = true
     var uploads: [LocationUpload] = []
     var sharing: [Bool] = []
+    var registeredPhones: [String] = []
 
     func pair(token: String) async throws -> PairResponse { try pairResult.get() }
+    func pairRegistered(phone: String) async throws -> PairResponse {
+        registeredPhones.append(phone)
+        return try pairResult.get()
+    }
 
     func uploadLocation(_ upload: LocationUpload, deviceToken: String) async throws {
         if let uploadError { throw uploadError }
@@ -75,6 +80,7 @@ final class SharingModelTests: XCTestCase {
     private func makeModel() -> SharingModel {
         SharingModel(
             location: provider, credentials: credentials, settings: SharingSettings(defaults: defaults),
+            defaultAPIBaseURL: URL(string: "https://photon.example")!,
             makeAPI: { [unowned self] url in baseURLs.append(url); return api! }, now: { [now] in now }
         )
     }
@@ -110,6 +116,41 @@ final class SharingModelTests: XCTestCase {
         XCTAssertEqual(provider.calls.filter { $0 == "always" }.count, 1)
         provider.grant(.always)
         XCTAssertEqual(model.displayState, .active)
+    }
+
+    func testRegisteredUserPairsAndStartsLocationWithoutAMessageLink() async {
+        let model = makeModel()
+        await model.pairRegistered(phone: "(555) 123-4567")
+
+        XCTAssertEqual(api.registeredPhones, ["+15551234567"])
+        XCTAssertEqual(credentials.credential?.deviceToken, "dev.token")
+        XCTAssertEqual(credentials.credential?.apiBaseURL, URL(string: "https://photon.example"))
+        XCTAssertTrue(model.wantsSharing)
+        XCTAssertEqual(api.sharing, [true])
+        XCTAssertEqual(provider.calls.filter { $0 != "stop" }, ["whenInUse", "start"])
+
+        provider.grant(.always)
+        await model.process(fix())
+        XCTAssertEqual(api.uploads.count, 1, "direct pairing must enable the normal location upload path")
+    }
+
+    func testUnregisteredUserMustRegisterBeforeDirectPairing() async {
+        api.pairResult = .failure(.registrationRequired)
+        let model = makeModel()
+        await model.pairRegistered(phone: "+15551234567")
+
+        XCTAssertEqual(model.displayState, .notPaired)
+        XCTAssertNil(credentials.credential)
+        XCTAssertEqual(model.message, "This phone isn’t registered with Sauron yet. Register it first, then try again.")
+    }
+
+    func testDirectPairingValidatesAndNormalizesPhoneNumbers() async {
+        XCTAssertEqual(SharingModel.normalizedPhone("+44 7700 900123"), "+447700900123")
+        XCTAssertEqual(SharingModel.normalizedPhone("1-555-123-4567"), "+15551234567")
+        let model = makeModel()
+        await model.pairRegistered(phone: "not a phone")
+        XCTAssertTrue(api.registeredPhones.isEmpty)
+        XCTAssertEqual(model.message, "Enter a valid phone number, including the country code.")
     }
 
     func testDecliningAlwaysShowsTheBackgroundAccessState() async {

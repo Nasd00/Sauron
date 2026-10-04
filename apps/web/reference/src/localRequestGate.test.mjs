@@ -54,6 +54,32 @@ test('a reverse-proxy signal header is refused', () => {
   assert.equal(admitSameSiteRequest({ ...same, proxyHeaders: { 'x-forwarded-for': '' } }).ok, true);
 });
 
+test('the configured HTTPS tunnel admits same-origin traffic only', () => {
+  const tunnel = {
+    hostHeader: 'iris.ngrok-free.dev',
+    protocol: 'http:',
+    origin: 'https://iris.ngrok-free.dev',
+    secFetchSite: 'same-origin',
+    proxyHeaders: { 'x-forwarded-for': '192.0.2.1', 'x-forwarded-proto': 'https' },
+    trustedProxyOrigin: 'https://iris.ngrok-free.dev',
+  };
+  assert.equal(admitSameSiteRequest(tunnel).ok, true);
+  assert.equal(admitSameSiteRequest({ ...tunnel, origin: undefined }).ok, true);
+  for (const override of [
+    { trustedProxyOrigin: undefined },
+    { hostHeader: 'evil.example' },
+    { origin: 'https://evil.example' },
+    { origin: 'null' },
+    { origin: undefined, secFetchSite: undefined },
+    { origin: undefined, secFetchSite: 'cross-site' },
+    { secFetchSite: 'cross-site' },
+    { proxyHeaders: { 'x-forwarded-proto': 'http' } },
+    { proxyHeaders: { 'x-forwarded-for': '192.0.2.1' } },
+  ]) {
+    assert.equal(admitSameSiteRequest({ ...tunnel, ...override }).ok, false, JSON.stringify(override));
+  }
+});
+
 test('same-origin Origin with Sec-Fetch-Site same-origin is admitted', () => {
   assert.equal(admitSameSiteRequest(same).ok, true);
 });

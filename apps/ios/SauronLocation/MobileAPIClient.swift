@@ -44,6 +44,8 @@ enum MobileAPIError: Error, Equatable {
     case pairingInvalid
     case pairingUsed
     case pairingExpired
+    /// The phone has not been enrolled through Sauron yet.
+    case registrationRequired
     /// The device token is unknown or was revoked; the app must pair again.
     case unauthorized
     /// STOP was sent over iMessage.
@@ -56,6 +58,7 @@ enum MobileAPIError: Error, Equatable {
 
 protocol MobileAPI {
     func pair(token: String) async throws -> PairResponse
+    func pairRegistered(phone: String) async throws -> PairResponse
     func uploadLocation(_ upload: LocationUpload, deviceToken: String) async throws
     func setSharing(_ enabled: Bool, deviceToken: String) async throws -> DeviceState
     func status(deviceToken: String) async throws -> DeviceState
@@ -69,6 +72,11 @@ struct MobileAPIClient: MobileAPI {
 
     func pair(token: String) async throws -> PairResponse {
         let data = try await send("POST", "/api/mobile/pair", body: ["pairingToken": token], deviceToken: nil)
+        return try decode(PairResponse.self, data)
+    }
+
+    func pairRegistered(phone: String) async throws -> PairResponse {
+        let data = try await send("POST", "/api/mobile/pair-registered", body: ["phone": phone], deviceToken: nil)
         return try decode(PairResponse.self, data)
     }
 
@@ -121,6 +129,7 @@ struct MobileAPIClient: MobileAPI {
         case "pairing_invalid": return .pairingInvalid
         case "pairing_used": return .pairingUsed
         case "pairing_expired": return .pairingExpired
+        case "registration_required": return .registrationRequired
         case "device_unauthorized", "token_invalid": return .unauthorized
         case "tracking_stopped": return .trackingStopped
         case "location_invalid": return .locationRejected(body?.message ?? "Location was rejected")

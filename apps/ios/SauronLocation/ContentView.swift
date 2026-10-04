@@ -5,6 +5,7 @@ import UIKit
 struct ContentView: View {
     @ObservedObject var model: SharingModel
     @Environment(\.openURL) private var openURL
+    @State private var phoneNumber = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 28) {
@@ -31,7 +32,19 @@ struct ContentView: View {
         switch model.displayState {
         case .notPaired:
             Field(label: "Location Sharing", value: "Not paired")
-            Explanation("Text WATCH ME to Sauron in Messages, then open the link on this iPhone.")
+            Explanation("Already registered with Sauron? Enter that phone number to pair this iPhone and start syncing your location.")
+            TextField("+1 555 123 4567", text: $phoneNumber)
+                .textContentType(.telephoneNumber)
+                .keyboardType(.phonePad)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .padding(12)
+                .background(.secondary.opacity(0.09), in: RoundedRectangle(cornerRadius: 10))
+                .accessibilityLabel("Registered phone number")
+            PrimaryButton("Pair & Start Sharing") {
+                Task { await model.pairRegistered(phone: phoneNumber) }
+            }
+            Explanation("Not registered yet? Register first from a Sauron watch area. For a replacement phone, text PAIR for a reset link.")
 
         case let .confirmPairing(host):
             Field(label: "Pair this iPhone", value: host)

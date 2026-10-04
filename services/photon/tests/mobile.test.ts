@@ -77,6 +77,7 @@ class FakeBackend extends MemoryMessagingStore implements MobileStore {
 }
 
 const BASE = "https://photon.example";
+const REGISTERED_PHONE = "+15551234567";
 const text = (value: string, messageId = value): InboundMessage => ({
   messageId, spaceId: "space-1", senderId: "sender-1",
   receivedAt: "2026-10-03T18:00:00.000Z", content: { type: "text", text: value },
@@ -89,7 +90,20 @@ function setup() {
     store: backend, geocoder: { geocode: async () => null }, radiusKm: 10, publicAppUrl: "https://downwind.example",
     mobilePairingBaseUrl: BASE, now: () => backend.clock,
   });
-  const api = createMobileApi({ store: backend, radiusKm: 10, id: () => `00000000-0000-4000-8000-00000000000${n++}` });
+  const api = createMobileApi({
+    store: backend,
+    radiusKm: 10,
+    id: () => `00000000-0000-4000-8000-00000000000${n++}`,
+    resolveRegistration: async phone => {
+      if (phone !== REGISTERED_PHONE) return undefined;
+      const profile = backend.profiles.find(row => row.senderId === "sender-1" && row.alertsEnabled);
+      const watch = backend.watches.find(row => row.senderId === "sender-1" && row.active);
+      const registration = profile ?? watch;
+      return registration ? {
+        userId: profile?.userId ?? "sender-1", spaceId: registration.spaceId, senderId: "sender-1",
+      } : undefined;
+    },
+  });
   return { backend, route, api };
 }
 
@@ -129,6 +143,29 @@ test("pairing returns a device token once; the link cannot be reused", async () 
   assert.equal(again.status, 410);
   assert.equal(again.body.error, "pairing_used");
   assert.equal((await api.pair({ pairingToken: "nope" })).status, 404);
+});
+
+test("an enrolled phone pairs directly in the app without a message link", async () => {
+  const { backend, api } = setup();
+  backend.watches.push({
+    id: "watch-1", spaceId: "space-1", senderId: "sender-1", placeLabel: "Ann Arbor",
+    latitude: 42.2808, longitude: -83.743, radiusKm: 10, active: true, createdAt: backend.clock,
+  });
+  const paired = await api.pairRegistered({ phone: REGISTERED_PHONE });
+  assert.equal(paired.status, 201);
+  assert.match(paired.body.deviceToken as string, /^[0-9a-f-]{36}\.[A-Za-z0-9_-]{43}$/);
+  assert.equal(backend.pairingRows.length, 1);
+  assert.notEqual(backend.pairingRows[0]?.usedAt, undefined, "the internal token is redeemed immediately");
+  assert.equal((await api.location(`Bearer ${paired.body.deviceToken}`, fix(backend.clock))).status, 200);
+});
+
+test("direct app pairing requires prior registration", async () => {
+  const { backend, api } = setup();
+  const result = await api.pairRegistered({ phone: "+15550000000" });
+  assert.equal(result.status, 403);
+  assert.equal(result.body.error, "registration_required");
+  assert.equal(backend.devices.length, 0);
+  assert.equal((await api.pairRegistered({ phone: "555-1234" })).status, 422);
 });
 
 test("expired pairing links are rejected", async () => {

@@ -23,7 +23,6 @@ export function mountMinimalUi(): () => void {
       <nav class="minimal-actions" aria-label="Workspace">
         <button type="button" data-cameras aria-pressed="false">Cameras</button>
         <button type="button" data-activity aria-pressed="false">Activity</button>
-        <button type="button" data-help aria-label="Show navigation help">?</button>
       </nav>
       <span class="minimal-uplink" data-state="sync" role="status" aria-label="Database link status"><span aria-hidden="true">░▒▓</span></span>
     </header>
@@ -33,29 +32,7 @@ export function mountMinimalUi(): () => void {
     <footer class="minimal-footer">
       <span class="minimal-caption"><span aria-hidden="true">░▒▓</span> EXPLORE THE WORLD <small>Drag to move · Scroll to zoom</small></span>
       <div class="minimal-voice"></div>
-      <div class="minimal-menus">
-        <details data-presets>
-          <summary>Visual presets<span class="spy-caret" aria-hidden="true"></span></summary>
-          <div class="minimal-menu minimal-presets">
-            <div class="spy-menu-head" aria-hidden="true"><span>VISUAL PRESETS</span><span>REF 01</span></div>
-          </div>
-        </details>
-        <details data-display>
-          <summary>Display<span class="spy-caret" aria-hidden="true"></span></summary>
-          <div class="minimal-menu minimal-display">
-            <div class="spy-menu-head" aria-hidden="true"><span>DISPLAY</span><span>REF 02</span></div>
-          </div>
-        </details>
-      </div>
-    </footer>
-    <dialog class="minimal-help" aria-labelledby="minimal-help-title">
-      <h2 id="minimal-help-title">Explore freely.</h2>
-      <p>Drag to pan. Scroll or pinch to zoom. Right-drag to tilt and rotate.</p>
-      <p>Search for a place above. Use the existing globe, north, and tilt controls to orient your view.</p>
-      <p>Open Cameras for CCTV feeds and camera projection. Open Activity for monitored cameras, evidence, and incident actions.</p>
-      <p>Visual presets and Display keep the original map effects available. Press 1 to return to Normal.</p>
-      <form method="dialog"><button>Close</button></form>
-    </dialog>`;
+    </footer>`;
   document.body.append(root);
   document.body.classList.add('minimal-ui-enabled');
   const disposers: (() => void)[] = [];
@@ -70,11 +47,6 @@ export function mountMinimalUi(): () => void {
     moved.push({ element, placeholder });
   }
   move('.location-search-wrap', '.minimal-search');
-  move('#style-buttons', '.minimal-presets');
-  move('.map-source-section', '.minimal-presets');
-  move('#pp-toggles', '.minimal-display');
-  move('#param-slider-panel', '.minimal-display');
-  move('#key-setup-chip', '.minimal-display');
   move('#cctv-panel', '.minimal-camera-host');
   move('.sauron-panel', '.minimal-activity-host');
   move('#iris-voice-control', '.minimal-voice');
@@ -96,19 +68,19 @@ export function mountMinimalUi(): () => void {
   });
   // Keep camera creation beside the viewer controls inside the Cameras panel.
   const addCamera = document.querySelector<HTMLButtonElement>('.broadcast-add-btn');
-  const helpButton = root.querySelector('[data-help]');
   if (addCamera) {
     const cameraActions = document.createElement('div');
     cameraActions.className = 'minimal-camera-actions';
     root.querySelector('.minimal-camera-host')!.prepend(cameraActions);
     move('.broadcast-add-btn', '.minimal-camera-actions');
   }
-  // "Watch area" joins the header nav too, sharing the header's white style.
+  // "Watch area" is the third evenly aligned workspace action.
   const watchToggle = document.querySelector<HTMLButtonElement>('.watch-toggle');
-  if (watchToggle && helpButton) {
+  const workspaceActions = root.querySelector<HTMLElement>('.minimal-actions');
+  if (watchToggle && workspaceActions) {
     const placeholder = document.createComment('Original position: .watch-toggle');
     watchToggle.before(placeholder);
-    helpButton.before(watchToggle);
+    workspaceActions.append(watchToggle);
     moved.push({ element: watchToggle, placeholder });
   }
   // Left toolbar: wipe every drawing on the globe (voice annotations and
@@ -135,13 +107,6 @@ export function mountMinimalUi(): () => void {
   }
   const search = root.querySelector<HTMLInputElement>('#location-search');
   if (search) search.placeholder = 'city, address, or lat,lon';
-  for (const menu of root.querySelectorAll('.minimal-menu')) {
-    const foot = document.createElement('div');
-    foot.className = 'spy-menu-foot';
-    foot.setAttribute('aria-hidden', 'true');
-    foot.textContent = '[ESC] CLOSE';
-    menu.append(foot);
-  }
   // Mirror the database link state from the Activity panel's status text.
   const uplink = root.querySelector<HTMLElement>('.minimal-uplink')!;
   const linkStatus = document.querySelector<HTMLElement>('.sauron-status');
@@ -157,7 +122,6 @@ export function mountMinimalUi(): () => void {
     observer.observe(linkStatus, { childList: true, characterData: true, subtree: true });
     disposers.push(() => observer.disconnect());
   }
-  const dialog = root.querySelector<HTMLDialogElement>('dialog')!;
   // Live traffic (TomTom flow) toggle, stacked under the existing globe actions.
   const leftToolbar = document.getElementById('top-center-actions');
   const layers = (window as unknown as { __iris?: { dataManager?: TrafficLayerManager } }).__iris?.dataManager;
@@ -208,7 +172,6 @@ export function mountMinimalUi(): () => void {
     observer.observe(radioTrigger, { attributes: true, attributeFilter: ['aria-pressed', 'aria-busy', 'aria-disabled', 'disabled'] });
     disposers.push(() => { observer.disconnect(); radio.remove(); });
   }
-  root.querySelector<HTMLButtonElement>('[data-help]')!.onclick = () => dialog.showModal();
   for (const name of ['cameras', 'activity']) {
     const button = root.querySelector<HTMLButtonElement>(`[data-${name}]`)!;
     const host = root.querySelector<HTMLElement>(name === 'cameras' ? '.minimal-camera-host' : '.minimal-activity-host')!;
@@ -229,20 +192,6 @@ export function mountMinimalUi(): () => void {
       if (event.detail > 0) button.blur();
     };
   }
-  const menus = [...root.querySelectorAll<HTMLDetailsElement>('details')];
-  for (const menu of menus) menu.addEventListener('toggle', () => {
-    if (menu.open) {
-      for (const other of menus) if (other !== menu) other.open = false;
-      const display = document.getElementById('pp-toggles');
-      if (menu.hasAttribute('data-display') && display?.classList.contains('collapsed'))
-        display.querySelector<HTMLButtonElement>('.panel-collapse-btn')?.click();
-    }
-  });
-  const onKeyDown = (event: KeyboardEvent) => {
-    if (event.key === 'Escape') for (const menu of menus) menu.open = false;
-  };
-  document.addEventListener('keydown', onKeyDown);
-  disposers.push(() => document.removeEventListener('keydown', onKeyDown));
   return () => {
     for (const dispose of disposers) dispose();
     for (const { element, placeholder } of moved.reverse()) placeholder.replaceWith(element);

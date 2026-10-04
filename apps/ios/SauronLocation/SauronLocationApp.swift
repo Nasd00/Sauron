@@ -13,11 +13,7 @@ struct SauronLocationApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView(model: model)
-                .onOpenURL { model.handle(url: $0) }
-                .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
-                    if let url = activity.webpageURL { model.handle(url: url) }
-                }
+            AppRootView(model: model)
                 .onChange(of: scenePhase) { _, phase in
                     if phase == .active { Task { await model.appDidBecomeActive() } }
                 }
@@ -34,5 +30,59 @@ struct SauronLocationApp: App {
         }
         await work()
         if task != .invalid { UIApplication.shared.endBackgroundTask(task) }
+    }
+}
+
+private struct AppRootView: View {
+    enum Tab: Hashable {
+        case iris
+        case location
+    }
+
+    @ObservedObject var model: SharingModel
+    @State private var selection: Tab = .iris
+    @State private var showingIntro = true
+
+    var body: some View {
+        ZStack {
+            TabView(selection: $selection) {
+                IrisExperienceView(isActive: selection == .iris)
+                    .tabItem { Label("Iris", systemImage: "globe.americas.fill") }
+                    .tag(Tab.iris)
+
+                ContentView(model: model)
+                    .tabItem { Label("Location", systemImage: "location.fill") }
+                    .tag(Tab.location)
+            }
+            .allowsHitTesting(!showingIntro)
+            .accessibilityHidden(showingIntro)
+
+            if showingIntro {
+                ZStack {
+                    Color.black.ignoresSafeArea()
+                    Image("IrisLaunchLogo")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 250, height: 250)
+                        .accessibilityLabel("Iris")
+                }
+                .transition(.opacity)
+                .accessibilityIdentifier("iris-intro")
+            }
+        }
+        .tint(.cyan)
+        .task {
+            guard showingIntro else { return }
+            do {
+                try await Task.sleep(for: .seconds(1.6))
+                withAnimation(.easeOut(duration: 0.25)) { showingIntro = false }
+            } catch { /* Cancellation leaves the intro ready for the next appearance. */ }
+        }
+        .onOpenURL { url in
+            if model.handle(url: url) { selection = .location }
+        }
+        .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
+            if let url = activity.webpageURL, model.handle(url: url) { selection = .location }
+        }
     }
 }

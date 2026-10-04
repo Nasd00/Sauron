@@ -6,7 +6,7 @@ import { admitSameSiteRequest } from '../../../src/localRequestGate.mjs';
  * itself when the request is refused. Returns true when it has already
  * responded (the caller returns); false when the handler should continue.
  * Refuses cross-site browser requests (foreign or opaque Origin, a
- * Sec-Fetch-Site other than same-origin/none, or reverse-proxy headers) while
+ * Sec-Fetch-Site other than same-origin/none, or untrusted proxy headers) while
  * keeping loopback non-browser tools and the HOST=0.0.0.0 LAN opt-in working.
  * @param {import('node:http').IncomingMessage} req
  * @param {import('node:http').ServerResponse} res
@@ -19,6 +19,9 @@ export function admitSameSite(req, res) {
     origin: req.headers?.origin,
     secFetchSite: req.headers?.['sec-fetch-site'],
     proxyHeaders: req.headers || {},
+    // Standalone embedding apps can opt in to one exact public HTTPS origin.
+    // Credential editing and MCP retain their stricter local-only gates.
+    trustedProxyOrigin: process.env.IRIS_TRUSTED_PROXY_ORIGIN,
   });
   if (verdict.ok) return false;
   res.statusCode = verdict.status;

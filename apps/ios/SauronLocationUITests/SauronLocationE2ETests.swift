@@ -20,6 +20,9 @@ final class SauronLocationE2ETests: XCTestCase {
         XCUIDevice.shared.location = XCUILocation(location: Self.start)
         let app = XCUIApplication()
         app.launch()
+        let locationTab = app.tabBars.buttons["Location"]
+        XCTAssertTrue(locationTab.waitForExistence(timeout: 10))
+        locationTab.tap()
         XCTAssertTrue(app.staticTexts["Not paired"].waitForExistence(timeout: 10))
 
         // Pairing link from iMessage opens the app; the user confirms.

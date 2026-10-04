@@ -68,12 +68,25 @@ final class MobileAPIClientTests: XCTestCase {
         XCTAssertNil(StubURLProtocol.requests.first?.value(forHTTPHeaderField: "Authorization"))
     }
 
+    func testRegisteredPhonePairingUsesTheDirectEndpoint() async throws {
+        StubURLProtocol.handler = { _ in
+            (201, Data(#"{"deviceToken":"d.t","deviceId":"d","trackingActive":true,"sharingEnabled":false}"#.utf8))
+        }
+        _ = try await client.pairRegistered(phone: "+15551234567")
+        let request = try XCTUnwrap(StubURLProtocol.requests.first)
+        XCTAssertEqual(request.url?.absoluteString, "https://photon.example/api/mobile/pair-registered")
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(request.httpBody)) as? [String: String])
+        XCTAssertEqual(json["phone"], "+15551234567")
+        XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
+    }
+
     func testMapsBackendErrorCodes() async {
         let cases: [(Int, String, MobileAPIError)] = [
             (403, #"{"error":"tracking_stopped"}"#, .trackingStopped),
             (401, #"{"error":"device_unauthorized"}"#, .unauthorized),
             (410, #"{"error":"pairing_used"}"#, .pairingUsed),
             (410, #"{"error":"pairing_expired"}"#, .pairingExpired),
+            (403, #"{"error":"registration_required"}"#, .registrationRequired),
             (422, #"{"error":"location_invalid","message":"too coarse"}"#, .locationRejected("too coarse")),
             (502, #"{"error":"unavailable"}"#, .server(status: 502)),
             (401, "", .unauthorized),

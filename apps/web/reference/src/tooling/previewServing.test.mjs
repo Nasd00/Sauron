@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { writeFile, rm } from 'node:fs/promises';
 import path from 'node:path';
+import { createServer as createHttpServer } from 'node:http';
 import { build, createServer, preview } from 'vite';
 import { localProviderPlugins } from '../../server/providers/local.js';
 import { apiNotFoundPlugin } from '../../server/standalone/api-not-found.js';
@@ -82,13 +83,32 @@ test('real dev and built-preview servers serve provider JSON and terminate unkno
     publicDir: false,
     logLevel: 'silent',
   };
+  const photon = createHttpServer(async (request, response) => {
+    if (request.url === '/api/mobile/status') {
+      response.writeHead(401, { 'Content-Type': 'application/json' });
+      response.end(JSON.stringify({ error: 'device_unauthorized' }));
+      return;
+    }
+    const chunks = [];
+    for await (const chunk of request) chunks.push(chunk);
+    response.writeHead(200, { 'Content-Type': 'application/json' });
+    response.end(JSON.stringify({
+      route: request.url,
+      authorization: request.headers.authorization,
+      body: Buffer.concat(chunks).toString(),
+    }));
+  });
+  await new Promise(resolve => photon.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise(resolve => photon.close(resolve)));
+  const photonOrigin = `http://127.0.0.1:${photon.address().port}`;
+  const proxy = { '/api/mobile/': { target: photonOrigin, changeOrigin: true } };
   await build(base);
   for (const isPreview of [false, true]) {
     const config = {
       ...base,
-      plugins: [...localProviderPlugins(), apiNotFoundPlugin()],
-      server: { host: '127.0.0.1', port: 0, hmr: false },
-      preview: { host: '127.0.0.1', port: 0 },
+      plugins: [...localProviderPlugins(), apiNotFoundPlugin({ passthroughPaths: ['/mobile/'] })],
+      server: { host: '127.0.0.1', port: 0, hmr: false, proxy },
+      preview: { host: '127.0.0.1', port: 0, proxy },
     };
     const server = isPreview
       ? await preview(config)
@@ -139,6 +159,20 @@ test('real dev and built-preview servers serve provider JSON and terminate unkno
       const tle = await fetch(origin + '/api/celestrak/invalid!');
       assert.equal(tle.status, 400);
       assert.equal(await tle.text(), 'invalid group');
+      const status = await fetch(origin + '/api/mobile/status');
+      assert.equal(status.status, 401);
+      assert.deepEqual(await status.json(), { error: 'device_unauthorized' });
+      const upload = await fetch(origin + '/api/mobile/location', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer fixture-device' },
+        body: JSON.stringify({ latitude: 42.28, longitude: -83.74 }),
+      });
+      assert.equal(upload.status, 200);
+      assert.deepEqual(await upload.json(), {
+        route: '/api/mobile/location',
+        authorization: 'Bearer fixture-device',
+        body: JSON.stringify({ latitude: 42.28, longitude: -83.74 }),
+      });
       if (isPreview) {
         const write = await fetch(origin + '/api/setup/keys', {
           method: 'POST',

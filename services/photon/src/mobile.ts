@@ -13,6 +13,7 @@ import type { Db } from "@tempmhacks/shared/db";
 export const MOBILE_PAIRING_TTL_MINUTES = 10;
 const PAIRING_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const DEVICE_TOKEN_PATTERN = /^([0-9a-f-]{36})\.([A-Za-z0-9_-]{43})$/;
+const E164_PATTERN = /^\+[1-9]\d{6,14}$/;
 const MAX_BODY_BYTES = 16_384;
 
 export function hashToken(token: string): string {
@@ -114,6 +115,10 @@ export type MobileApiOptions = {
   /** Radius for a newly created location-backed profile. */
   radiusKm: number;
   id?: () => string;
+  /** Resolves a phone only when that Spectrum user is currently enrolled. */
+  resolveRegistration?: (phone: string) => Promise<{
+    userId: string; spaceId: string; senderId: string;
+  } | undefined>;
   /** Receives unexpected (non-coded) backend errors; coded errors are normal client outcomes. */
   onUnexpectedError?: (route: string, error: unknown) => void;
 };
@@ -127,30 +132,66 @@ export function createMobileApi(options: MobileApiOptions) {
     if (response.status === 502) options.onUnexpectedError?.(route, error);
     return response;
   };
+  const pair = async (body: unknown): Promise<ApiResponse> => {
+    const pairingToken = (body as { pairingToken?: unknown } | null)?.pairingToken;
+    if (typeof pairingToken !== "string" || !PAIRING_TOKEN_PATTERN.test(pairingToken)) {
+      return { status: 404, body: { error: "pairing_invalid", message: "pairing link is not valid" } };
+    }
+    const deviceId = id();
+    const deviceToken = newDeviceToken(deviceId);
+    try {
+      await store.redeemPairing({
+        pairingTokenHash: hashToken(pairingToken), credentialTokenHash: hashToken(deviceToken), deviceId,
+      });
+    } catch (error) {
+      return failure("pair", error);
+    }
+    return {
+      status: 201,
+      body: { deviceToken, ...deviceState(store.getDevice(deviceId)) ?? {
+        deviceId, trackingActive: true, sharingEnabled: false, lastLocationAt: null, lastAccuracyMeters: null,
+      } },
+    };
+  };
 
   return {
-    /** POST /api/mobile/pair { pairingToken } → device token (returned once). */
-    async pair(body: unknown): Promise<ApiResponse> {
-      const pairingToken = (body as { pairingToken?: unknown } | null)?.pairingToken;
-      if (typeof pairingToken !== "string" || !PAIRING_TOKEN_PATTERN.test(pairingToken)) {
-        return { status: 404, body: { error: "pairing_invalid", message: "pairing link is not valid" } };
+    /** POST /api/mobile/pair-registered { phone } → device token for an enrolled user. */
+    async pairRegistered(body: unknown): Promise<ApiResponse> {
+      const rawPhone = (body as { phone?: unknown } | null)?.phone;
+      const phone = typeof rawPhone === "string" ? rawPhone.trim() : "";
+      if (!E164_PATTERN.test(phone)) {
+        return { status: 422, body: { error: "invalid_request", message: "phone must be an E.164 number such as +15551234567" } };
       }
-      const deviceId = id();
-      const deviceToken = newDeviceToken(deviceId);
+      if (!options.resolveRegistration) {
+        return { status: 503, body: { error: "unavailable", message: "Direct app pairing is not configured" } };
+      }
+      let registration: Awaited<ReturnType<NonNullable<typeof options.resolveRegistration>>>;
       try {
-        await store.redeemPairing({
-          pairingTokenHash: hashToken(pairingToken), credentialTokenHash: hashToken(deviceToken), deviceId,
-        });
+        registration = await options.resolveRegistration(phone);
       } catch (error) {
-        return failure("pair", error);
+        options.onUnexpectedError?.("pair-registered", error);
+        return { status: 502, body: { error: "unavailable", message: "Registration service is unavailable" } };
       }
-      return {
-        status: 201,
-        body: { deviceToken, ...deviceState(store.getDevice(deviceId)) ?? {
-          deviceId, trackingActive: true, sharingEnabled: false, lastLocationAt: null, lastAccuracyMeters: null,
-        } },
-      };
+      if (!registration) {
+        return {
+          status: 403,
+          body: { error: "registration_required", message: "Register this phone with Sauron before pairing the app" },
+        };
+      }
+
+      // Reuse the single credential-issuance path. The temporary token never
+      // leaves Photon, while redemption still revokes an older paired device.
+      const token = newPairingToken();
+      try {
+        await store.createPairing({ tokenHash: hashToken(token), ...registration });
+      } catch (error) {
+        return failure("pair-registered", error);
+      }
+      return pair({ pairingToken: token });
     },
+
+    /** POST /api/mobile/pair { pairingToken } → device token (returned once). */
+    pair,
 
     /** POST /api/mobile/location — moves the paired user's single location-backed profile. */
     async location(authorization: string | undefined, body: unknown): Promise<ApiResponse> {
@@ -322,7 +363,8 @@ export function createMobileHttpHandler(options: MobileHttpOptions) {
     }
 
     const routes: Record<string, string[]> = {
-      "/api/mobile/pair": ["POST"], "/api/mobile/location": ["POST"], "/api/mobile/sharing": ["POST"],
+      "/api/mobile/pair": ["POST"], "/api/mobile/pair-registered": ["POST"],
+      "/api/mobile/location": ["POST"], "/api/mobile/sharing": ["POST"],
       "/api/mobile/status": ["GET"], "/admin/mobile/revoke": ["POST"],
     };
     const allowed = routes[path];
@@ -346,6 +388,7 @@ export function createMobileHttpHandler(options: MobileHttpOptions) {
       return true;
     }
     const result = path === "/api/mobile/pair" ? await api.pair(body.value)
+      : path === "/api/mobile/pair-registered" ? await api.pairRegistered(body.value)
       : path === "/api/mobile/location" ? await api.location(authorization, body.value)
         : path === "/api/mobile/sharing" ? await api.sharing(authorization, body.value)
           : await api.revoke(body.value);
