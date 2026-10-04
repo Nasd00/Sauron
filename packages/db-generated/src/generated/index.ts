@@ -34,11 +34,13 @@ import {
 } from "spacetimedb";
 
 // Import all reducer arg schemas
+import ClaimAlertReducer from "./claim_alert_reducer";
+import ClaimInboundMessageReducer from "./claim_inbound_message_reducer";
 import ConfirmIncidentReducer from "./confirm_incident_reducer";
 import CreateAlertReducer from "./create_alert_reducer";
 import CreateIncidentReducer from "./create_incident_reducer";
 import CreateWatchReducer from "./create_watch_reducer";
-import DeactivateWatchesForUserReducer from "./deactivate_watches_for_user_reducer";
+import DeactivateWatchesForSenderReducer from "./deactivate_watches_for_sender_reducer";
 import DismissIncidentReducer from "./dismiss_incident_reducer";
 import InsertAlertReducer from "./insert_alert_reducer";
 import InsertWatchReducer from "./insert_watch_reducer";
@@ -129,6 +131,10 @@ const tablesSchema = __schema({
       { accessor: 'id', name: 'watch_id_idx_btree', algorithm: 'btree', columns: [
         'id',
       ] },
+      { accessor: 'bySenderActive', name: 'watch_sender_id_active_idx_btree', algorithm: 'btree', columns: [
+        'senderId',
+        'active',
+      ] },
     ],
     constraints: [
       { name: 'watch_id_key', constraint: 'unique', columns: ['id'] },
@@ -138,11 +144,13 @@ const tablesSchema = __schema({
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
 const reducersSchema = __reducers(
+  __reducerSchema("claim_alert", ClaimAlertReducer),
+  __reducerSchema("claim_inbound_message", ClaimInboundMessageReducer),
   __reducerSchema("confirm_incident", ConfirmIncidentReducer),
   __reducerSchema("create_alert", CreateAlertReducer),
   __reducerSchema("create_incident", CreateIncidentReducer),
   __reducerSchema("create_watch", CreateWatchReducer),
-  __reducerSchema("deactivate_watches_for_user", DeactivateWatchesForUserReducer),
+  __reducerSchema("deactivate_watches_for_sender", DeactivateWatchesForSenderReducer),
   __reducerSchema("dismiss_incident", DismissIncidentReducer),
   __reducerSchema("insert_alert", InsertAlertReducer),
   __reducerSchema("insert_watch", InsertWatchReducer),

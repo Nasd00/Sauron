@@ -23,7 +23,8 @@ export function normalizePlaceLabel(placeLabel: string): string {
 }
 
 export function validateWatch(watch: Watch): Watch {
-  if (!watch.userHandle.trim()) throw new Error("Watch userHandle must not be empty");
+  if (!watch.spaceId.trim()) throw new Error("Watch spaceId must not be empty");
+  if (!watch.senderId.trim()) throw new Error("Watch senderId must not be empty");
   if (!Number.isFinite(watch.radiusKm) || watch.radiusKm <= 0) {
     throw new Error("Watch radiusKm must be greater than 0");
   }
@@ -32,20 +33,25 @@ export function validateWatch(watch: Watch): Watch {
 }
 
 export function validateAlertStatus(status: string): asserts status is Alert["status"] {
-  if (status !== "pending" && status !== "sent" && status !== "failed") {
+  if (status !== "pending" && status !== "sending" && status !== "sent" && status !== "failed") {
     throw new Error("Invalid alert status");
   }
 }
 
+export function claimAlert(alert: Alert): Alert {
+  if (alert.status !== "pending") throw new Error(`Cannot claim ${alert.status} alert`);
+  return { ...alert, status: "sending" };
+}
+
 export function markAlertSent(alert: Alert, providerMessageId: string, sentAt: number): Alert {
-  if (alert.status !== "pending") throw new Error(`Cannot mark ${alert.status} alert as sent`);
+  if (alert.status !== "sending") throw new Error(`Cannot mark ${alert.status} alert as sent`);
   if (!providerMessageId.trim()) throw new Error("Provider message ID must not be empty");
   requireTimestamp(sentAt);
   return { ...alert, status: "sent", providerMessageId, sentAt };
 }
 
 export function markAlertFailed(alert: Alert, error: string): Alert {
-  if (alert.status !== "pending") throw new Error(`Cannot mark ${alert.status} alert as failed`);
+  if (alert.status !== "sending") throw new Error(`Cannot mark ${alert.status} alert as failed`);
   if (!error.trim()) throw new Error("Alert error must not be empty");
   return { ...alert, status: "failed", error };
 }

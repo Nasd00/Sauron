@@ -12,7 +12,8 @@ import {
 
 export default __t.row({
   id: __t.string().primaryKey(),
-  userHandle: __t.string().name("user_handle"),
+  spaceId: __t.string().name("space_id"),
+  senderId: __t.string().name("sender_id"),
   placeLabel: __t.string().name("place_label"),
   latitude: __t.f64(),
   longitude: __t.f64(),
