@@ -1,4 +1,4 @@
-# tempMhacks
+# IRIS
 
 ## Local setup
 
