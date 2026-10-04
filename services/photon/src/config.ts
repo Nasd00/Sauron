@@ -27,10 +27,13 @@ function positiveNumber(name: string, fallback?: number): number {
 }
 
 export function loadConfig() {
+  const spectrumProjectSecret = requiredEither("SPECTRUM_PROJECT_SECRET", "PHOTON_SECRET");
   return {
     spectrumProjectId: requiredEither("SPECTRUM_PROJECT_ID", "PHOTON_PROJECT_ID"),
-    spectrumProjectSecret: requiredEither("SPECTRUM_PROJECT_SECRET", "PHOTON_SECRET"),
-    spectrumWebhookSecret: required("SPECTRUM_WEBHOOK_SECRET"),
+    spectrumProjectSecret,
+    // Photon signs webhooks with the project secret unless a separate one is configured.
+    spectrumWebhookSecret: process.env.SPECTRUM_WEBHOOK_SECRET?.trim() || spectrumProjectSecret,
+    photonAdminSecret: required("PHOTON_ADMIN_SECRET"),
     spacetimeUri: process.env.SPACETIMEDB_URI?.trim() || "http://127.0.0.1:3000",
     spacetimeDatabase: process.env.SPACETIMEDB_DATABASE?.trim() || "tempmhacks-local",
     spacetimeToken: process.env.SPACETIMEDB_TOKEN,

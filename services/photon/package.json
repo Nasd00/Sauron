@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@tempmhacks/shared": "*",
+    "@spectrum-ts/imessage": "12.10.1",
     "spectrum-ts": "12.10.1"
   }
 }
