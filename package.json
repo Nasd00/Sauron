@@ -12,9 +12,13 @@
     "test": "npm run typecheck && tsx --test apps/web/tests/*.test.ts spacetimedb/tests/*.test.ts services/cv/tests/*.test.ts services/photon/tests/*.test.ts services/alerts/tests/*.test.ts scripts/demo/*.test.ts",
     "db:build": "npm run typecheck && spacetime build --module-path spacetimedb",
     "db:publish": "npm run typecheck && spacetime publish --server local --module-path spacetimedb tempmhacks-local",
+    "db:publish:maincloud": "npm run typecheck && spacetime publish --server maincloud --module-path spacetimedb $SPACETIMEDB_DATABASE",
     "test:integration": "tsx scripts/test-spacetimedb.ts",
     "demo:download-fixture": "tsx scripts/demo/download-fixture.ts",
     "demo:seed:cameras": "tsx scripts/demo/cameras.ts",
+    "demo:seed:cameras:sdk": "tsx scripts/demo/cameras-sdk.ts",
+    "demo:seed:incident": "tsx scripts/demo/incident.ts",
+    "demo:reset": "tsx scripts/demo/reset.ts",
     "dev:web": "npm run dev --workspace @tempmhacks/web",
     "build:web": "npm run build:shared && npm run build --workspace @tempmhacks/web",
     "dev:cv": "node -e \"console.log('Placeholder: implement computer vision development in services/cv/')\"",
@@ -22,8 +26,7 @@
     "dev:photon": "npm run dev --workspace @tempmhacks/photon",
     "photon:send-test": "npm run send-test --workspace @tempmhacks/photon --",
     "dev:alerts": "npm run dev --workspace @tempmhacks/alerts",
-    "demo:start": "node -e \"console.log('Run npm run demo:download-fixture, npm run db:publish, then npm run demo:seed:cameras')\"",
-    "demo:reset": "node -e \"console.log('Placeholder: implement demo reset in scripts/demo/')\""
+    "demo:start": "node -e \"console.log('Hosted DB: set SPACETIMEDB_* in .env, then run npm run demo:seed:cameras:sdk and npm run dev:photon / npm run dev:alerts. Local DB: npm run demo:download-fixture, npm run db:publish, npm run demo:seed:cameras.')\""
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

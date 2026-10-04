@@ -54,6 +54,7 @@ export type GeneratedDbConnection = {
     registerCamera(args: { camera: CameraRow }): Promise<void>;
     setCameraStatus(args: { cameraId: string; status: string; lastSeenAt: number }): Promise<void>;
     publishObservation(args: { observation: ObservationRow }): Promise<void>;
+    createIncident(args: { input: IncidentRow }): Promise<void>;
     confirmIncident(args: { id: string; confirmedAt: number }): Promise<void>;
     dismissIncident(args: { id: string }): Promise<void>;
     resolveIncident(args: { id: string; resolvedAt: number }): Promise<void>;

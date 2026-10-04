@@ -64,6 +64,7 @@ export type Db = {
     subscribe(callback: RowCallback<Incident>): () => void;
     get(id: string): Incident | undefined;
     listConfirmed(): Incident[];
+    create(incident: Incident): Promise<void>;
     confirm(id: string): Promise<void>;
     dismiss(id: string): Promise<void>;
     resolve(id: string, resolvedAt?: number): Promise<void>;
@@ -110,6 +111,7 @@ export function createDb(connection: GeneratedDbConnection): Db {
       },
       listConfirmed: () => Array.from(connection.db.incident.iter(), toIncident)
         .filter(incident => incident.status === "confirmed"),
+      create: incident => connection.reducers.createIncident({ input: incident }),
       confirm: id => connection.reducers.confirmIncident({ id, confirmedAt: Date.now() }),
       dismiss: id => connection.reducers.dismissIncident({ id }),
       resolve: (id, resolvedAt = Date.now()) => connection.reducers.resolveIncident({ id, resolvedAt }),
