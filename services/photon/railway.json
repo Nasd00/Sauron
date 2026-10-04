@@ -1,0 +1,13 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "builder": "RAILPACK",
+    "buildCommand": "npm run build:shared",
+    "watchPatterns": ["services/photon/**", "packages/**", "package-lock.json"]
+  },
+  "deploy": {
+    "startCommand": "npm run start --workspace @tempmhacks/photon",
+    "healthcheckPath": "/health",
+    "restartPolicyType": "ON_FAILURE"
+  }
+}
