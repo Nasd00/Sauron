@@ -8,6 +8,8 @@ iMessage through Photon Spectrum. People can then text back for follow-ups,
 help, and shelters. The web app is a 3D globe of cameras and incidents, and an
 iPhone companion app keeps a person's location current.
 
+![The Iris globe over North America, with satellites in orbit and live markers across the continent](docs/images/globe.jpg)
+
 ```text
 cameras ──▶ services/cv ──▶ SpacetimeDB ◀── services/photon ◀──▶ iMessage (Spectrum)
             (detect smoke,   (cameras,           (commands, location,
@@ -495,6 +497,14 @@ that incident, keep resolved incident details, and show explicit not-found or
 retryable database errors. The globe can also enroll a phone for alerts at a
 picked point through Photon, which needs `VITE_PHOTON_URL` and the operator key
 (`PHOTON_ADMIN_SECRET`).
+
+![Photorealistic 3D downtown Austin with live traffic-camera frames pinned to their intersections](docs/images/city-cameras.jpg)
+
+*Live camera frames pinned to their intersections over Google photorealistic 3D tiles.*
+
+![Night-vision visual preset over Midtown Manhattan, with tracked vehicles labeled on the street grid](docs/images/night-vision.jpg)
+
+*The NVG visual preset with tracked vehicles. Presets (CRT, NVG, FLIR, anime, noir, snow) and map sources are under Visual Presets.*
 
 ```sh
 npm run dev:web
