@@ -39,8 +39,115 @@ npm run demo:start
 npm run demo:reset
 ```
 
-The incident, Photon, alert, CV-process, and demo-reset commands remain safe
-placeholders until those workstreams supply their long-running processes.
+The incident and CV-process commands remain safe placeholders until those
+workstreams supply their long-running processes. `demo:reset` is implemented
+(see the iMessage runbook below).
+
+## Photon iMessage and alerts
+
+The Photon service uses Spectrum's managed iMessage provider only. It accepts
+native Spectrum webhooks at `POST /spectrum/webhook`, passes the exact request
+bytes to Spectrum for HMAC verification, durably claims each Photon message ID,
+and then runs the deterministic command router. The SDK acknowledges webhooks
+before the command callback runs.
+
+Set these values in the ignored `.env` file:
+
+```sh
+SPECTRUM_PROJECT_ID=
+SPECTRUM_PROJECT_SECRET=
+SPECTRUM_WEBHOOK_SECRET=
+SPACETIMEDB_URI=http://127.0.0.1:3000
+SPACETIMEDB_DATABASE=tempmhacks-local
+VITE_SPACETIMEDB_URI=http://127.0.0.1:3000
+VITE_SPACETIMEDB_DATABASE=tempmhacks-local
+WATCH_RADIUS_KM=10
+PUBLIC_APP_URL=https://your-public-web-app.example
+GEOCODER_USER_AGENT=Downwind/0.1 (contact: you@example.com)
+```
+
+Publish the current SpacetimeDB module, start the Photon service, and expose its
+port over public HTTPS. Configure the resulting URL in Photon as
+`https://your-service.example/spectrum/webhook`:
+
+```sh
+npm run db:publish
+npm run dev:photon
+npm run dev:alerts
+```
+
+Supported iMessage commands are `WATCH <place>`, `STATUS`, `STOP`, and `HELP`.
+The alert service matches confirmed incidents to active watches with Haversine
+distance, claims each pending alert before sending, and records either the
+Spectrum message ID or a terminal failure.
+
+Alert links use `/incident/:incidentId`. The web app connects with the two
+`VITE_SPACETIMEDB_*` values, selects and focuses that exact incident, retains
+resolved incident details, and shows explicit not-found or retryable database
+errors.
+
+The default geocoder is the public OpenStreetMap Nominatim service. Queries are
+end-user initiated, serialized to at most one request per second, and cached in
+process. Provide an identifying `GEOCODER_USER_AGENT`, retain OpenStreetMap
+attribution in product surfaces, and review the Nominatim usage policy before
+deployment. `GEOCODER_BASE_URL` can switch to another compatible or self-hosted
+endpoint without a code change. Geocoding data © OpenStreetMap contributors.
+
+### Runbook: run the iMessage flow end to end
+
+This is the verified path for bringing the inbound command flow and proactive
+alerts online, including against a hosted SpacetimeDB (maincloud) database.
+
+1. **Configure `.env`.** For a hosted database, set `SPACETIMEDB_URI`,
+   `SPACETIMEDB_DATABASE`, and `SPACETIMEDB_TOKEN` (maincloud requires the
+   token). Also set `SPECTRUM_PROJECT_ID`/`SPECTRUM_PROJECT_SECRET` (or the
+   legacy `PHOTON_PROJECT_ID`/`PHOTON_SECRET`), `SPECTRUM_WEBHOOK_SECRET`,
+   `GEOCODER_USER_AGENT`, and `PUBLIC_APP_URL`.
+
+2. **Publish the module** so the deployed schema matches the code. Local:
+   `npm run db:publish`. Hosted: log in once with
+   `spacetime login --token "$SPACETIMEDB_TOKEN"`, then
+   `npm run db:publish:maincloud` (reads `$SPACETIMEDB_DATABASE`). A schema
+   change on an existing database may require `--delete-data`; see the migration
+   note below.
+
+3. **Seed the demo camera.** Hosted (no local CLI server needed):
+   `npm run demo:seed:cameras:sdk`. Local CLI: `npm run demo:seed:cameras`.
+   Both are idempotent and leave an existing camera unchanged.
+
+4. **Start the services:** `npm run dev:photon` (webhook on `PHOTON_PORT`,
+   default 3001) and `npm run dev:alerts`.
+
+5. **Expose the webhook over public HTTPS.** For example
+   `cloudflared tunnel --url http://localhost:3001`. The quick-tunnel URL
+   changes on each restart.
+
+6. **Point Photon at the tunnel.** In the Photon dashboard, set the webhook to
+   `https://<tunnel>/spectrum/webhook` and make the dashboard signing secret
+   match `SPECTRUM_WEBHOOK_SECRET` in `.env`. Restart `dev:photon` after any
+   secret change.
+
+7. **Drive the flow.** From an added phone, text the project's line:
+   `HELP`, `WATCH Ann Arbor`, `STATUS`, `STOP`. Then seed a confirmed incident
+   with `npm run demo:seed:incident`; the alert service matches it against
+   active watches and sends a proactive alert into the existing conversation.
+
+8. **Reset between runs.** `npm run demo:reset` deactivates watches and moves
+   incidents to terminal states (resolved/dismissed) while keeping cameras.
+
+Diagnostics: `npm run photon:send-test -- +15551234567` opens a DM and sends one
+message to confirm credentials. On a shared-pool (free) line, cold
+outbound-first sends are rejected with `Target not allowed for this project`;
+sending into a conversation the user started first is on the allowed path, which
+is why alerts land once the user has texted the line.
+
+Shared-tier notes: a shared line only replies to phones added to the project,
+and new-conversation limits apply. A dedicated (Business) line removes the
+outbound-first restriction. SpacetimeDB has no row-delete reducer here, so
+`demo:reset` transitions rows to terminal states rather than deleting them; a
+schema-incompatible republish to an existing database requires `--delete-data`,
+which destroys all rows (re-seed the camera afterward with
+`demo:seed:cameras:sdk`).
 
 ## Web globe
 

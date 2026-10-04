@@ -194,6 +194,16 @@ button, a { font: inherit; }
 .panel-note span { color: #ff806c; font-family: "SFMono-Regular", Consolas, monospace; }
 .panel-note p { margin: 0; }
 
+.incident-retry {
+  margin-top: 18px;
+  padding: 9px 14px;
+  border: 1px solid rgb(255 255 255 / 18%);
+  border-radius: 999px;
+  color: #f7fafb;
+  background: #19252e;
+  cursor: pointer;
+}
+
 .panel-toggle {
   position: absolute;
   z-index: 6;

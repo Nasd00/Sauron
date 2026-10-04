@@ -1,5 +1,5 @@
 import { schema, table, t, type Infer } from "spacetimedb/server";
-import type { Camera, Observation, Incident, Watch, Alert } from "@tempmhacks/shared";
+import type { Camera, Observation, Incident, Watch, Alert, InboundReceipt } from "@tempmhacks/shared";
 
 // String enums stay strings on the wire, matching the shared contracts.
 // Reducers validate their allowed values before writing.
@@ -22,9 +22,13 @@ const incidentFields = {
   confirmedAt: t.f64().optional(), resolvedAt: t.f64().optional(),
 };
 const watchFields = {
-  id: t.string(), userHandle: t.string(), placeLabel: t.string(),
+  id: t.string(), spaceId: t.string(), senderId: t.string(), placeLabel: t.string(),
   latitude: t.f64(), longitude: t.f64(), radiusKm: t.f64(),
   active: t.bool(), createdAt: t.f64(),
+};
+const inboundReceiptFields = {
+  messageId: t.string(), spaceId: t.string(), senderId: t.string(),
+  receivedAt: t.f64(), contentType: t.string(),
 };
 const alertFields = {
   id: t.string(), incidentId: t.string(), watchId: t.string(), status: t.string(),
@@ -37,6 +41,7 @@ export const observationInput = t.object("ObservationInput", observationFields);
 export const incidentInput = t.object("IncidentInput", incidentFields);
 export const watchInput = t.object("WatchInput", watchFields);
 export const alertInput = t.object("AlertInput", alertFields);
+export const inboundReceiptInput = t.object("InboundReceiptInput", inboundReceiptFields);
 
 // Compile-time schema parity, allowing only the deliberate string-enum widening
 // and required undefined-valued fields used by the database's option encoding.
@@ -53,6 +58,7 @@ export type SchemaContractChecks = [
   Assert<Matches<Infer<typeof incidentInput>, Incident>>,
   Assert<Matches<Infer<typeof watchInput>, Watch>>,
   Assert<Matches<Infer<typeof alertInput>, Alert>>,
+  Assert<Matches<Infer<typeof inboundReceiptInput>, InboundReceipt>>,
 ];
 
 const db = schema({
@@ -73,10 +79,14 @@ const db = schema({
   ] }, { ...incidentFields, id: t.string().primaryKey() }),
   watch: table({ name: "watch", public: true, indexes: [
     { accessor: "byActive", algorithm: "btree", columns: ["active"] },
+    { accessor: "bySenderActive", algorithm: "btree", columns: ["senderId", "active"] },
   ] }, { ...watchFields, id: t.string().primaryKey() }),
   alert: table({ name: "alert", public: true, indexes: [
     { accessor: "byIncidentWatch", algorithm: "btree", columns: ["incidentId", "watchId"] },
   ] }, { ...alertFields, id: t.string().primaryKey() }),
+  inbound_receipt: table({ name: "inbound_receipt", public: false }, {
+    ...inboundReceiptFields, messageId: t.string().primaryKey(),
+  }),
 });
 
 export default db;
