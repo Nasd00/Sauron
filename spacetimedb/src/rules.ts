@@ -1,4 +1,4 @@
-import type { Alert, Camera, Incident, Observation, Watch } from "@tempmhacks/shared";
+import type { Alert, Camera, Incident, InboundReceipt, Observation, Watch } from "@tempmhacks/shared";
 
 export function requireConfidence(confidence: number): void {
   if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
@@ -117,4 +117,32 @@ export function resolveIncident(incident: Incident, resolvedAt: number): Inciden
   if (incident.resolvedAt !== undefined) throw new Error("Resolution timestamp is already set");
   requireTimestamp(resolvedAt);
   return { ...incident, status: "resolved", resolvedAt };
+}
+
+/**
+ * Validates the identity and metadata fields of an inbound receipt before it is
+ * durably claimed. Pure; throws on invalid input. The reducer runs this inside
+ * its transaction so a malformed receipt is rejected atomically with the claim.
+ */
+export function validateInboundReceipt(receipt: InboundReceipt): void {
+  if (!receipt.messageId.trim() || !receipt.spaceId.trim() || !receipt.senderId.trim()) {
+    throw new Error("Inbound message identity fields must not be empty");
+  }
+  requireTimestamp(receipt.receivedAt);
+  if (!receipt.contentType.trim()) throw new Error("Inbound contentType must not be empty");
+}
+
+/**
+ * Models the atomic inbound-claim decision. `alreadyClaimed` reflects whether a
+ * receipt with the same messageId already exists in the same transaction. When
+ * two webhook deliveries race, the database serializes their reducer calls on
+ * the messageId primary key, so exactly one observes `alreadyClaimed === false`
+ * and wins; the loser throws here. This function is the single source of truth
+ * for that rule and is unit-tested independently of the live database.
+ */
+export function claimInbound(receipt: InboundReceipt, alreadyClaimed: boolean): void {
+  if (alreadyClaimed) {
+    throw new Error(`Inbound message ${receipt.messageId} was already claimed`);
+  }
+  validateInboundReceipt(receipt);
 }
