@@ -5,26 +5,41 @@ import UIKit
 struct ContentView: View {
     @ObservedObject var model: SharingModel
     @Environment(\.openURL) private var openURL
-    @State private var phoneNumber = ""
+    @State private var question = ""
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 28) {
-            Text("Sauron Location")
-                .font(.largeTitle.bold())
-                .accessibilityAddTraits(.isHeader)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 28) {
+                Text("Sauron Location")
+                    .font(.largeTitle.bold())
+                    .accessibilityAddTraits(.isHeader)
 
-            content
+                ForEach(model.incidents) { incident in
+                    DangerCard(incident: incident) {
+                        question = "How do I get away from the \(incident.title)?"
+                        Task { await model.ask(question) }
+                    }
+                }
 
-            if let message = model.message {
-                Text(message)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .accessibilityLabel("Notice: \(message)")
+                content
+
+                if model.credential != nil {
+                    AssistBox(question: $question, reply: model.assistReply, isAsking: model.isAsking) {
+                        Task { await model.ask(question) }
+                    }
+                }
+
+                if let message = model.message {
+                    Text(message)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel("Notice: \(message)")
+                }
+                Spacer()
             }
-            Spacer()
+            .padding(24)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(24)
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder
@@ -32,19 +47,7 @@ struct ContentView: View {
         switch model.displayState {
         case .notPaired:
             Field(label: "Location Sharing", value: "Not paired")
-            Explanation("Already registered with Sauron? Enter that phone number to pair this iPhone and start syncing your location.")
-            TextField("+1 555 123 4567", text: $phoneNumber)
-                .textContentType(.telephoneNumber)
-                .keyboardType(.phonePad)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .padding(12)
-                .background(.secondary.opacity(0.09), in: RoundedRectangle(cornerRadius: 10))
-                .accessibilityLabel("Registered phone number")
-            PrimaryButton("Pair & Start Sharing") {
-                Task { await model.pairRegistered(phone: phoneNumber) }
-            }
-            Explanation("Not registered yet? Register first from a Sauron watch area. For a replacement phone, text PAIR for a reset link.")
+            Explanation("Text WATCH ME to Sauron in Messages, then open the one-time link on this iPhone. For a replacement phone, text PAIR.")
 
         case let .confirmPairing(host):
             Field(label: "Pair this iPhone", value: host)
@@ -115,6 +118,71 @@ extension PermissionProblem {
             return "Sauron needs Always Location access to keep your incident watch current when you move."
         case .preciseRequired:
             return "Sauron needs Precise Location to keep your incident watch current when you move."
+        }
+    }
+}
+
+/// One active danger: what, how far, and which way is out.
+private struct DangerCard: View {
+    let incident: NearbyIncident
+    let askHowToLeave: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(incident.insideDangerZone ? "YOU ARE IN A DANGER ZONE" : "DANGER NEARBY")
+                .font(.caption.weight(.heavy))
+                .foregroundStyle(.white.opacity(0.9))
+            Text(incident.title).font(.title2.bold()).foregroundStyle(.white)
+            Text(summary).font(.body).foregroundStyle(.white).fixedSize(horizontal: false, vertical: true)
+            if let details = incident.details {
+                Text(details).font(.callout).foregroundStyle(.white.opacity(0.9))
+            }
+            HStack {
+                Button("How do I get out?", action: askHowToLeave)
+                    .buttonStyle(.borderedProminent).tint(.white).foregroundStyle(.red)
+                if let call = URL(string: "tel:911") {
+                    Link("Call 911", destination: call).buttonStyle(.bordered).tint(.white)
+                }
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(incident.insideDangerZone ? Color.red : Color.orange, in: RoundedRectangle(cornerRadius: 14))
+        .accessibilityElement(children: .contain)
+    }
+
+    private var summary: String {
+        let distance = String(format: "%.1f km", incident.distanceKm)
+        return incident.insideDangerZone
+            ? "\(incident.hazard.capitalized). Head \(incident.headAway) to leave the area if it is safe."
+            : "\(incident.hazard.capitalized), \(distance) away. Avoid the area; if you need to move, head \(incident.headAway)."
+    }
+}
+
+/// Ask the help agent, the same one that answers over iMessage.
+private struct AssistBox: View {
+    @Binding var question: String
+    let reply: String?
+    let isAsking: Bool
+    let send: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Ask for help").font(.subheadline).foregroundStyle(.secondary)
+            HStack {
+                TextField("e.g. How do I get out safely?", text: $question)
+                    .textFieldStyle(.roundedBorder)
+                    .submitLabel(.send)
+                    .onSubmit(send)
+                Button(action: send) {
+                    if isAsking { ProgressView() } else { Text("Send") }
+                }
+                .disabled(isAsking || question.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+            if let reply {
+                Text(reply).font(.body).fixedSize(horizontal: false, vertical: true)
+                    .accessibilityLabel("Assistant: \(reply)")
+            }
         }
     }
 }

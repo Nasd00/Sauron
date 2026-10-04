@@ -34,15 +34,20 @@ final class SharingModel: ObservableObject, LocationProviderDelegate {
     @Published private(set) var preciseAllowed: Bool
     @Published private(set) var lastUpload: UploadedLocation?
     @Published private(set) var message: String?
+    /// Active dangers near this iPhone, nearest first.
+    @Published private(set) var incidents: [NearbyIncident] = []
+    /// The help agent's latest answer in the app.
+    @Published private(set) var assistReply: String?
+    @Published private(set) var isAsking = false
 
     private let location: LocationProviding
     private let credentials: CredentialStoring
     private let settings: SharingSettings
     private let makeAPI: (URL) -> MobileAPI
-    private let defaultAPIBaseURL: URL?
     private let policy: UploadPolicy
     private let now: () -> Date
     private let backgroundTask: (@escaping () async -> Void) async -> Void
+    private let notifier: IncidentNotifying?
 
     /// Waiting for the user to answer a system permission prompt.
     private var awaitingPrompt = false
@@ -53,16 +58,16 @@ final class SharingModel: ObservableObject, LocationProviderDelegate {
         location: LocationProviding,
         credentials: CredentialStoring,
         settings: SharingSettings,
-        defaultAPIBaseURL: URL? = MobileAppConfiguration.apiBaseURL,
         makeAPI: @escaping (URL) -> MobileAPI = { MobileAPIClient(baseURL: $0) },
         policy: UploadPolicy = UploadPolicy(),
         now: @escaping () -> Date = Date.init,
-        backgroundTask: @escaping (@escaping () async -> Void) async -> Void = { await $0() }
+        backgroundTask: @escaping (@escaping () async -> Void) async -> Void = { await $0() },
+        notifier: IncidentNotifying? = nil
     ) {
+        self.notifier = notifier
         self.location = location
         self.credentials = credentials
         self.settings = settings
-        self.defaultAPIBaseURL = defaultAPIBaseURL
         self.makeAPI = makeAPI
         self.policy = policy
         self.now = now
@@ -135,49 +140,6 @@ final class SharingModel: ObservableObject, LocationProviderDelegate {
         }
     }
 
-    /// Pairs an already enrolled phone directly from the app. The server refuses
-    /// unknown or unsubscribed numbers, so registration still happens first.
-    func pairRegistered(phone: String) async {
-        guard !isPairing else { return }
-        guard let apiBaseURL = defaultAPIBaseURL else {
-            message = "Sauron’s location service isn’t configured in this build."
-            return
-        }
-        let phone = Self.normalizedPhone(phone)
-        guard Self.isE164(phone) else {
-            message = "Enter a valid phone number, including the country code."
-            return
-        }
-        isPairing = true
-        message = nil
-        defer { isPairing = false }
-        do {
-            let response = try await makeAPI(apiBaseURL).pairRegistered(phone: phone)
-            try await acceptPairing(response, apiBaseURL: apiBaseURL)
-        } catch MobileAPIError.registrationRequired {
-            message = "This phone isn’t registered with Sauron yet. Register it first, then try again."
-        } catch let error as MobileAPIError {
-            message = Self.pairingMessage(error)
-        } catch {
-            message = "Couldn’t pair this iPhone. Check your connection and try again."
-        }
-    }
-
-    static func normalizedPhone(_ raw: String) -> String {
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        let digits = trimmed.filter(\.isNumber)
-        if trimmed.hasPrefix("+") { return "+\(digits)" }
-        if digits.count == 10 { return "+1\(digits)" }
-        if digits.count == 11, digits.hasPrefix("1") { return "+\(digits)" }
-        return trimmed
-    }
-
-    private static func isE164(_ phone: String) -> Bool {
-        guard phone.first == "+" else { return false }
-        let digits = phone.dropFirst()
-        return (7...15).contains(digits.count) && digits.first != "0" && digits.allSatisfy(\.isNumber)
-    }
-
     private func acceptPairing(_ response: PairResponse, apiBaseURL: URL) async throws {
         let newCredential = DeviceCredential(
             deviceId: response.deviceId, deviceToken: response.deviceToken, apiBaseURL: apiBaseURL
@@ -199,7 +161,6 @@ final class SharingModel: ObservableObject, LocationProviderDelegate {
         case .pairingUsed: return "That pairing link was already used. Text PAIR to Sauron for a new one."
         case .pairingExpired: return "That pairing link expired. Text PAIR to Sauron for a new one."
         case .pairingInvalid: return "That pairing link isn’t valid. Text PAIR to Sauron for a new one."
-        case .registrationRequired: return "This phone isn’t registered with Sauron yet. Register it first, then try again."
         case .network: return "Couldn’t reach Sauron. Check your connection and open the link again."
         default: return "Pairing failed. Text PAIR to Sauron for a new link."
         }
@@ -212,6 +173,7 @@ final class SharingModel: ObservableObject, LocationProviderDelegate {
         setWantsSharing(true)
         message = nil
         requestPermissionIfNeeded()
+        notifier?.requestAuthorization()
         do {
             let state = try await makeAPI(credential.apiBaseURL).setSharing(true, deviceToken: credential.deviceToken)
             setTrackingActive(state.trackingActive)
@@ -247,6 +209,7 @@ final class SharingModel: ObservableObject, LocationProviderDelegate {
         do {
             let state = try await makeAPI(credential.apiBaseURL).status(deviceToken: credential.deviceToken)
             setTrackingActive(state.trackingActive)
+            if let incidents = state.incidents { update(incidents: incidents) }
         } catch {
             handle(error)
         }
@@ -310,8 +273,9 @@ final class SharingModel: ObservableObject, LocationProviderDelegate {
         let api = makeAPI(credential.apiBaseURL)
         await backgroundTask { [weak self] in
             do {
-                try await api.uploadLocation(LocationUpload(fix), deviceToken: credential.deviceToken)
+                let incidents = try await api.uploadLocationReportingIncidents(LocationUpload(fix), deviceToken: credential.deviceToken)
                 self?.recordUpload(fix)
+                self?.update(incidents: incidents)
             } catch {
                 self?.handle(error)
             }
@@ -331,6 +295,38 @@ final class SharingModel: ObservableObject, LocationProviderDelegate {
             // Accepted again after WATCH ME: back to full updates.
             setTrackingActive(true)
             location.startUpdates()
+        }
+    }
+
+    // MARK: Dangers
+
+    /// Shows the current dangers and notifies once about each new one.
+    func update(incidents: [NearbyIncident]) {
+        self.incidents = incidents
+        var notified = settings.notifiedIncidents
+        for incident in incidents where !notified.contains(incident.id) {
+            notifier?.notify(incident)
+            notified.insert(incident.id)
+        }
+        settings.notifiedIncidents = notified
+    }
+
+    /// Asks the help agent, e.g. "how do I get out?". The same assistant answers over iMessage.
+    func ask(_ text: String) async {
+        let question = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let credential, !question.isEmpty, !isAsking else { return }
+        isAsking = true
+        defer { isAsking = false }
+        do {
+            let answer = try await makeAPI(credential.apiBaseURL).assist(question, deviceToken: credential.deviceToken)
+            assistReply = answer.reply
+            if let incidents = answer.incidents { update(incidents: incidents) }
+        } catch MobileAPIError.server(status: 429) {
+            assistReply = "Too many messages right now. If you are in danger, call 911."
+        } catch MobileAPIError.unauthorized {
+            handle(MobileAPIError.unauthorized)
+        } catch {
+            assistReply = "Couldn’t reach the assistant. If you are in danger, call 911. You can also text Sauron in Messages."
         }
     }
 
@@ -359,6 +355,8 @@ final class SharingModel: ObservableObject, LocationProviderDelegate {
         wantsSharing = false
         trackingActive = true
         lastUpload = nil
+        incidents = []
+        assistReply = nil
     }
 
     private func setWantsSharing(_ value: Bool) {

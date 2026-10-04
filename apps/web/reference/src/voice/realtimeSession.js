@@ -18,7 +18,7 @@ export function createRealtimeSession({
     start: (settings) => controller.start(settings),
     stop: (settings) => controller.stop(settings),
     sendText: (text) => controller.sendTextCommand(text),
-    sendMapEvent: (event) => controller.notifyMapEvent(event),
+    sendMapEvent: (event, options) => controller.notifyMapEvent(event, options),
     ignoreButtonClick: () => Boolean(controller.spaceKeyHeld),
     bindControls() {
       if (controller.ui.tierButton) {

@@ -1,9 +1,9 @@
-import type { Alert, Incident, MobileDevice, UserAlertProfile, Watch } from "@tempmhacks/shared";
+import type { Alert, Camera, IncidentView, MobileDevice, UserAlertProfile, Watch } from "@tempmhacks/shared";
 import type { Db } from "@tempmhacks/shared/db";
 import type { AlertMatcherStore, ProfileAlertMatcherStore } from "./matcher.js";
-import type { PendingAlertStore } from "./sender.js";
+import type { AllClearStore, PendingAlertStore } from "./sender.js";
 
-export type AlertServiceStore = AlertMatcherStore & ProfileAlertMatcherStore & PendingAlertStore & {
+export type AlertServiceStore = AlertMatcherStore & ProfileAlertMatcherStore & PendingAlertStore & AllClearStore & {
   listPending(): Alert[];
 };
 
@@ -39,7 +39,9 @@ export function createAlertServiceStore(db: Db): AlertServiceStore {
         throw error;
       }
     },
-    getIncident: async incidentId => db.incidents.get(incidentId),
+    getIncident: async incidentId => db.incidents.view(incidentId),
+    listAlertsForIncident: async incidentId => db.alerts.listForIncident(incidentId),
+    getCamera: async cameraId => db.cameras.get(cameraId),
     getTarget: async targetId => {
       const profileId = parseProfileTarget(targetId);
       if (profileId !== undefined) {
@@ -93,7 +95,8 @@ export class MemoryAlertStore implements AlertServiceStore {
   readonly watches = new Map<string, Watch>();
   readonly profiles = new Map<string, UserAlertProfile>();
   readonly devices: MobileDevice[] = [];
-  readonly incidents = new Map<string, Incident>();
+  readonly incidents = new Map<string, IncidentView>();
+  readonly cameras = new Map<string, Camera>();
   readonly alerts = new Map<string, Alert>();
   readonly contexts = new Map<string, { spaceId: string; activeIncidentId: string; alertedAt: number }>();
 
@@ -131,8 +134,16 @@ export class MemoryAlertStore implements AlertServiceStore {
     return true;
   }
 
-  async getIncident(incidentId: string): Promise<Incident | undefined> {
+  async getIncident(incidentId: string): Promise<IncidentView | undefined> {
     return this.incidents.get(incidentId);
+  }
+
+  async listAlertsForIncident(incidentId: string): Promise<Alert[]> {
+    return Array.from(this.alerts.values()).filter(alert => alert.incidentId === incidentId);
+  }
+
+  async getCamera(cameraId: string): Promise<Camera | undefined> {
+    return this.cameras.get(cameraId);
   }
 
   async getTarget(targetId: string): Promise<AlertTarget | undefined> {

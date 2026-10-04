@@ -1,6 +1,6 @@
 import type { Db } from "@tempmhacks/shared/db";
 import type {
-  Camera, ConversationContext, Incident, InboundReceipt, MobileDevice, Observation, UserAlertProfile, Watch,
+  Camera, ConversationContext, Incident, IncidentView, InboundReceipt, MobileDevice, Observation, UserAlertProfile, Watch,
 } from "@tempmhacks/shared";
 import { haversineDistanceKm } from "@tempmhacks/shared/geo";
 import type { InboundMessage, MessagingStore } from "./types.js";
@@ -43,7 +43,7 @@ export function createMessagingStore(db: Db): MessagingStore {
         updatedAt: Date.now(),
       });
     },
-    getIncident: async incidentId => db.incidents.get(incidentId),
+    getIncident: async incidentId => db.incidents.view(incidentId),
     getCamera: async cameraId => db.cameras.get(cameraId),
     getLatestObservation: async cameraId => db.observations.latestForCamera(cameraId),
     countOtherNearbyCameras: async (cameraId, latitude, longitude, radiusKm) =>
@@ -63,7 +63,7 @@ export class MemoryMessagingStore implements MessagingStore {
   readonly watches: Watch[] = [];
   readonly profiles: UserAlertProfile[] = [];
   readonly contexts = new Map<string, ConversationContext>();
-  readonly incidents = new Map<string, Incident>();
+  readonly incidents = new Map<string, IncidentView>();
   readonly cameras = new Map<string, Camera>();
   readonly observations: Observation[] = [];
   readonly devices: MobileDevice[] = [];
@@ -139,7 +139,7 @@ export class MemoryMessagingStore implements MessagingStore {
     });
   }
 
-  async getIncident(incidentId: string): Promise<Incident | undefined> {
+  async getIncident(incidentId: string): Promise<IncidentView | undefined> {
     return this.incidents.get(incidentId);
   }
 

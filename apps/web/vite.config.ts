@@ -36,7 +36,7 @@ export default defineConfig(async context => {
   const proxy = Object.fromEntries([
     "^/health(?:\\?|$)",
     "^/spectrum/webhook(?:\\?|$)",
-    "^/admin/(?:users|mobile/)",
+    "^/admin/(?:users(?:\\?|$)|incidents(?:/(?:resolve|confirm|dismiss))?(?:\\?|$)|mobile/)",
     "/api/mobile/",
     "/pair/",
     "/.well-known/apple-app-site-association",

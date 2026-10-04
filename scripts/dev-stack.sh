@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Start Photon + ngrok + Iris web for local iOS / iMessage development.
+# Start Photon, alerts, ngrok, and Iris web for local iOS / iMessage development.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -12,6 +12,8 @@ NGROK_HOST="${NGROK_HOST:-starfish-revolving-footman.ngrok-free.dev}"
 export PHOTON_PORT NGROK_HOST
 NGROK_URL="https://${NGROK_HOST}"
 HEALTH_URL="${NGROK_URL}/health"
+export VITE_PHOTON_URL="${VITE_PHOTON_URL:-$NGROK_URL}"
+export MOBILE_PAIRING_BASE_URL="${MOBILE_PAIRING_BASE_URL:-$NGROK_URL}"
 
 PIDS=()
 
@@ -72,6 +74,8 @@ if [[ "$IRIS_WEB_MODE" == "preview" ]]; then
 fi
 
 npm run dev:photon &
+PIDS+=($!)
+npm run dev:alerts &
 PIDS+=($!)
 
 if [[ "$IRIS_WEB_MODE" == "preview" ]]; then

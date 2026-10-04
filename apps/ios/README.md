@@ -8,16 +8,9 @@ The app has two native tabs:
 
 ## Location pairing
 
-An enrolled user can enter their registered phone number in the Location tab and
-pair immediately. Photon rejects phone numbers without an active watch or alert
-profile, so new users still need to register in Iris first. Texting `PAIR` and
-opening the returned link remains available as a reset flow; either pairing
-method replaces the previously paired device.
-
-Debug builds use the shared Iris/Photon tunnel. For an archive or deployed build,
-set the app target's `PHOTON_API_URL` build setting to the public HTTPS URL for
-`services/photon`. A `PHOTON_API_URL` process environment variable can override
-the build setting during local development or tests.
+Text `WATCH ME` and open the one-time pairing link on this iPhone. Text `PAIR`
+for a replacement phone; the new link replaces the previously paired device.
+Entering a phone number alone cannot claim someone else's location profile.
 
 ## Iris server URL
 
@@ -31,8 +24,8 @@ npm run dev:stack
 
 The tunnel forwards to Iris on port 4173. Iris proxies `/api/mobile/`, `/pair/`,
 `/admin/`, `/spectrum/webhook`, `/health`, and the Apple association file to
-Photon on port 3001. This keeps map, voice, registration, pairing, and iMessage
-webhooks on one public HTTPS origin. The iPhone can use Wi-Fi or cellular.
+Photon on port 3001. The stack also starts the alerts worker so a reported
+incident reaches enrolled phones. The iPhone can use Wi-Fi or cellular.
 
 The stack builds and serves the bundled web client, avoiding a large unbundled
 module graph over the phone connection. For web hot reload instead, use

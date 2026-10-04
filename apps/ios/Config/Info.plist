@@ -4,8 +4,6 @@
 <dict>
 	<key>IrisWebAppURL</key>
 	<string>$(IRIS_WEB_APP_URL)</string>
-	<key>PhotonAPIBaseURL</key>
-	<string>$(PHOTON_API_URL)</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

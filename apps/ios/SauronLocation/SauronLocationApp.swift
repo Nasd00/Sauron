@@ -7,7 +7,8 @@ struct SauronLocationApp: App {
         location: CoreLocationProvider(),
         credentials: KeychainCredentialStore(),
         settings: SharingSettings(defaults: .standard),
-        backgroundTask: SauronLocationApp.runInBackgroundTask
+        backgroundTask: SauronLocationApp.runInBackgroundTask,
+        notifier: LocalIncidentNotifier()
     )
     @Environment(\.scenePhase) private var scenePhase
 

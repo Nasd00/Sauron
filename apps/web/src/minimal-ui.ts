@@ -23,6 +23,7 @@ export function mountMinimalUi(): () => void {
       <nav class="minimal-actions" aria-label="Workspace">
         <button type="button" data-cameras aria-pressed="false">Cameras</button>
         <button type="button" data-activity aria-pressed="false">Activity</button>
+        <button type="button" data-help aria-label="Show navigation help">?</button>
       </nav>
       <span class="minimal-uplink" data-state="sync" role="status" aria-label="Database link status"><span aria-hidden="true">░▒▓</span></span>
     </header>
@@ -32,7 +33,29 @@ export function mountMinimalUi(): () => void {
     <footer class="minimal-footer">
       <span class="minimal-caption"><span aria-hidden="true">░▒▓</span> EXPLORE THE WORLD <small>Drag to move · Scroll to zoom</small></span>
       <div class="minimal-voice"></div>
-    </footer>`;
+      <div class="minimal-menus">
+        <details data-presets>
+          <summary>Visual presets<span class="spy-caret" aria-hidden="true"></span></summary>
+          <div class="minimal-menu minimal-presets">
+            <div class="spy-menu-head" aria-hidden="true"><span>VISUAL PRESETS</span><span>REF 01</span></div>
+          </div>
+        </details>
+        <details data-display>
+          <summary>Display<span class="spy-caret" aria-hidden="true"></span></summary>
+          <div class="minimal-menu minimal-display">
+            <div class="spy-menu-head" aria-hidden="true"><span>DISPLAY</span><span>REF 02</span></div>
+          </div>
+        </details>
+      </div>
+    </footer>
+    <dialog class="minimal-help" aria-labelledby="minimal-help-title">
+      <h2 id="minimal-help-title">Explore freely.</h2>
+      <p>Drag to pan. Scroll or pinch to zoom. Right-drag to tilt and rotate.</p>
+      <p>Search for a place above. Use the existing globe, north, and tilt controls to orient your view.</p>
+      <p>Open Cameras for CCTV feeds and camera projection. Open Activity for monitored cameras, evidence, and incident actions. Use Report event to mark a dangerous area and alert phones inside it.</p>
+      <p>Visual presets and Display keep the original map effects available. Press 1 to return to Normal.</p>
+      <form method="dialog"><button>Close</button></form>
+    </dialog>`;
   document.body.append(root);
   document.body.classList.add('minimal-ui-enabled');
   const disposers: (() => void)[] = [];
@@ -47,6 +70,11 @@ export function mountMinimalUi(): () => void {
     moved.push({ element, placeholder });
   }
   move('.location-search-wrap', '.minimal-search');
+  move('#style-buttons', '.minimal-presets');
+  move('.map-source-section', '.minimal-presets');
+  move('#pp-toggles', '.minimal-display');
+  move('#param-slider-panel', '.minimal-display');
+  move('#key-setup-chip', '.minimal-display');
   move('#cctv-panel', '.minimal-camera-host');
   move('.sauron-panel', '.minimal-activity-host');
   move('#iris-voice-control', '.minimal-voice');
@@ -68,6 +96,9 @@ export function mountMinimalUi(): () => void {
   });
   // Keep camera creation beside the viewer controls inside the Cameras panel.
   const addCamera = document.querySelector<HTMLButtonElement>('.broadcast-add-btn');
+  const helpButton = root.querySelector('[data-help]');
+  const helpDialog = root.querySelector<HTMLDialogElement>('.minimal-help');
+  if (helpButton && helpDialog) helpButton.addEventListener('click', () => helpDialog.showModal());
   if (addCamera) {
     const cameraActions = document.createElement('div');
     cameraActions.className = 'minimal-camera-actions';
@@ -82,6 +113,14 @@ export function mountMinimalUi(): () => void {
     watchToggle.before(placeholder);
     workspaceActions.append(watchToggle);
     moved.push({ element: watchToggle, placeholder });
+  }
+  // "Report event" sits beside "Watch area": mark a dangerous area and alert phones in it.
+  const reportToggle = document.querySelector<HTMLButtonElement>('.report-toggle');
+  if (reportToggle && helpButton) {
+    const placeholder = document.createComment('Original position: .report-toggle');
+    reportToggle.before(placeholder);
+    helpButton.before(reportToggle);
+    moved.push({ element: reportToggle, placeholder });
   }
   // Left toolbar: wipe every drawing on the globe (voice annotations and
   // hand-drawn marks share one board, so one clear covers both).

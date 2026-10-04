@@ -28,15 +28,4 @@ final class IrisAppConfigurationTests: XCTestCase {
         XCTAssertEqual(IrisWebView.origin(of: URL(string: "http://localhost:4173")!), "http://localhost:4173")
     }
 
-    func testMobileAPIRequiresHTTPSExceptForLocalDevelopment() {
-        XCTAssertEqual(
-            MobileAppConfiguration.resolve(environmentValue: "https://photon.example", infoPlistValue: nil),
-            URL(string: "https://photon.example")
-        )
-        XCTAssertEqual(
-            MobileAppConfiguration.resolve(environmentValue: "http://127.0.0.1:3001", infoPlistValue: nil),
-            URL(string: "http://127.0.0.1:3001")
-        )
-        XCTAssertNil(MobileAppConfiguration.resolve(environmentValue: "http://photon.example", infoPlistValue: nil))
-    }
 }

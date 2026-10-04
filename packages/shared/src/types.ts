@@ -1,5 +1,23 @@
 /** Canonical contracts. IDs are strings; timestamps are Unix milliseconds. */
+/** What a camera detector can observe. */
 export type HazardType = "smoke_fire";
+/** What an incident can be: camera detections plus hazards an operator can report by hand. */
+export type IncidentHazard = HazardType | "fire" | "flood" | "gas_leak" | "chemical" | "violence" | "other";
+export const REPORTABLE_HAZARDS = ["fire", "smoke_fire", "flood", "gas_leak", "chemical", "violence", "other"] as const satisfies readonly IncidentHazard[];
+export const HAZARD_LABELS: Record<IncidentHazard, string> = {
+  smoke_fire: "smoke or fire",
+  fire: "fire",
+  flood: "flooding",
+  gas_leak: "gas leak",
+  chemical: "chemical hazard",
+  violence: "violence or active threat",
+  other: "dangerous event",
+};
+export function hazardLabel(type: string): string {
+  return HAZARD_LABELS[type as IncidentHazard] ?? type.replace(/_/g, " ");
+}
+/** Camera id carried by incidents an operator reported by hand; no camera row exists for it. */
+export const MANUAL_CAMERA_ID = "manual";
 export type IncidentStatus = "candidate" | "confirmed" | "dismissed" | "resolved";
 
 export type Camera = {
@@ -26,8 +44,9 @@ export type Observation = {
 
 export type Incident = {
   id: string;
+  /** The detecting camera, or {@link MANUAL_CAMERA_ID} for operator reports. */
   cameraId: string;
-  type: HazardType;
+  type: IncidentHazard;
   status: IncidentStatus;
   confidence: number;
   latitude: number;
@@ -37,6 +56,28 @@ export type Incident = {
   confirmedAt?: number;
   resolvedAt?: number;
 };
+
+/**
+ * The operator's description of a manually reported incident, one per incident. Kept in its own
+ * table so camera incidents are unchanged. `radiusKm` is the danger zone: people inside it are
+ * alerted and routes avoid it.
+ */
+export type IncidentReport = {
+  incidentId: string;
+  title: string;
+  description: string;
+  radiusKm: number;
+  /** Free-text operator label, e.g. "web operator". Not an identity. */
+  reportedBy: string;
+  reportedAt: number;
+};
+
+/** Incident context everything downstream (alerts, agents, apps) shares. */
+export type IncidentView = Incident & { report?: IncidentReport };
+
+export function isManualIncident(incident: Pick<Incident, "cameraId">): boolean {
+  return incident.cameraId === MANUAL_CAMERA_ID;
+}
 
 export type Watch = {
   id: string;

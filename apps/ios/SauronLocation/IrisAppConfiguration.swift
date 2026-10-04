@@ -31,29 +31,3 @@ enum IrisAppConfiguration {
         return url
     }
 }
-
-/// Photon endpoint used for direct pairing of an already registered phone.
-enum MobileAppConfiguration {
-    static let environmentKey = "PHOTON_API_URL"
-    static let infoPlistKey = "PhotonAPIBaseURL"
-
-    static var apiBaseURL: URL? {
-        resolve(
-            environmentValue: ProcessInfo.processInfo.environment[environmentKey],
-            infoPlistValue: Bundle.main.object(forInfoDictionaryKey: infoPlistKey) as? String
-        )
-    }
-
-    static func resolve(environmentValue: String?, infoPlistValue: String?) -> URL? {
-        [environmentValue, infoPlistValue]
-            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .first(where: { !$0.isEmpty && !$0.contains("$(") })
-            .flatMap { value in
-                guard let url = URL(string: value),
-                      let scheme = url.scheme?.lowercased(),
-                      let host = url.host,
-                      scheme == "https" || (scheme == "http" && ["localhost", "127.0.0.1"].contains(host)) else { return nil }
-                return url
-            }
-    }
-}

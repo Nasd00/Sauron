@@ -298,7 +298,6 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.1;
-				PHOTON_API_URL = "https://starfish-revolving-footman.ngrok-free.dev";
 				PRODUCT_BUNDLE_IDENTIFIER = com.tempmhacks.sauron;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -326,7 +325,6 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.1;
-				PHOTON_API_URL = "";
 				PRODUCT_BUNDLE_IDENTIFIER = com.tempmhacks.sauron;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;

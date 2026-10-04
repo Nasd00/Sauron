@@ -1,5 +1,5 @@
 import { schema, table, t, type Infer } from "spacetimedb/server";
-import type { Camera, Observation, Incident, Watch, Alert, InboundReceipt, UserAlertProfile, ConversationContext, MobileDevice } from "@tempmhacks/shared";
+import type { Camera, Observation, Incident, IncidentReport, Watch, Alert, InboundReceipt, UserAlertProfile, ConversationContext, MobileDevice } from "@tempmhacks/shared";
 
 // String enums stay strings on the wire, matching the shared contracts.
 // Reducers validate their allowed values before writing.
@@ -52,6 +52,10 @@ const mobileDeviceFields = {
   pairedAt: t.f64(), updatedAt: t.f64(),
   lastLocationAt: t.f64().optional(), lastAccuracyMeters: t.f64().optional(),
 };
+const incidentReportFields = {
+  incidentId: t.string(), title: t.string(), description: t.string(), radiusKm: t.f64(),
+  reportedBy: t.string(), reportedAt: t.f64(),
+};
 
 export const cameraInput = t.object("CameraInput", cameraFields);
 export const observationInput = t.object("ObservationInput", observationFields);
@@ -62,6 +66,7 @@ export const inboundReceiptInput = t.object("InboundReceiptInput", inboundReceip
 export const userAlertProfileInput = t.object("UserAlertProfileInput", userAlertProfileFields);
 export const conversationContextInput = t.object("ConversationContextInput", conversationContextFields);
 export const mobileDeviceInput = t.object("MobileDeviceInput", mobileDeviceFields);
+export const incidentReportInput = t.object("IncidentReportInput", incidentReportFields);
 
 // Compile-time schema parity, allowing only the deliberate string-enum widening
 // and required undefined-valued fields used by the database's option encoding.
@@ -82,6 +87,7 @@ export type SchemaContractChecks = [
   Assert<Matches<Infer<typeof userAlertProfileInput>, UserAlertProfile>>,
   Assert<Matches<Infer<typeof conversationContextInput>, ConversationContext>>,
   Assert<Matches<Infer<typeof mobileDeviceInput>, MobileDevice>>,
+  Assert<Matches<Infer<typeof incidentReportInput>, IncidentReport>>,
 ];
 
 const db = schema({
@@ -130,6 +136,14 @@ const db = schema({
   mobile_credential: table({ name: "mobile_credential", public: false }, {
     tokenHash: t.string().primaryKey(), deviceId: t.string(), createdAt: t.f64(),
     revokedAt: t.f64().optional(),
+  }),
+  // Operator descriptions of manually reported incidents (one per incident).
+  incident_report: table({ name: "incident_report", public: true }, {
+    ...incidentReportFields, incidentId: t.string().primaryKey(),
+  }),
+  // Identities (lowercase hex, no 0x) besides the owner allowed to report incidents, e.g. Photon's token.
+  operator: table({ name: "operator", public: false }, {
+    identityHex: t.string().primaryKey(), grantedAt: t.f64(),
   }),
 });
 

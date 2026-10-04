@@ -134,6 +134,16 @@ export const IncidentInput = __t.object("IncidentInput", {
 });
 export type IncidentInput = __Infer<typeof IncidentInput>;
 
+export const IncidentReport = __t.object("IncidentReport", {
+  incidentId: __t.string(),
+  title: __t.string(),
+  description: __t.string(),
+  radiusKm: __t.f64(),
+  reportedBy: __t.string(),
+  reportedAt: __t.f64(),
+});
+export type IncidentReport = __Infer<typeof IncidentReport>;
+
 export const MobileCredential = __t.object("MobileCredential", {
   tokenHash: __t.string(),
   deviceId: __t.string(),
@@ -198,6 +208,12 @@ export const ObservationInput = __t.object("ObservationInput", {
   },
 });
 export type ObservationInput = __Infer<typeof ObservationInput>;
+
+export const Operator = __t.object("Operator", {
+  identity: __t.identity(),
+  grantedAt: __t.f64(),
+});
+export type Operator = __Infer<typeof Operator>;
 
 export const SpectrumEvent = __t.object("SpectrumEvent", {
   eventId: __t.string(),

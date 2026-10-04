@@ -67,6 +67,13 @@ struct SharingSettings {
         static let alwaysRequested = "alwaysRequested"
         static let lastUpload = "lastUpload"
         static let installed = "installed"
+        static let notifiedIncidents = "notifiedIncidents"
+    }
+
+    /// Incidents already shown as a notification, so each danger alerts once.
+    var notifiedIncidents: Set<String> {
+        get { Set(defaults.stringArray(forKey: Key.notifiedIncidents) ?? []) }
+        nonmutating set { defaults.set(Array(newValue.suffix(200)), forKey: Key.notifiedIncidents) }
     }
 
     /// False on the first launch after install. Keychain items survive app deletion,

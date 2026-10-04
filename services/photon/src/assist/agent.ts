@@ -1,7 +1,7 @@
 import { FinishReason, type Content, type GenerateContentParameters, type GenerateContentResponse } from "@google/genai";
 import type { StructuredLogger } from "../types.js";
 import { distanceKm, type LatLng } from "./geo.js";
-import { runTool, TOOL_DEFINITIONS, type KnownIncident, type ToolDeps } from "./tools.js";
+import { dangerRadiusKmOf, describeIncident, runTool, TOOL_DEFINITIONS, type KnownIncident, type ToolDeps } from "./tools.js";
 
 /**
  * Who the agent is talking to and where they are, as far as photon knows: a location they shared
@@ -24,7 +24,9 @@ export const FALLBACK_REPLY = "I'm having trouble answering right now. If anyone
 /** Prefix for turns written by the service rather than the person. */
 const PLATFORM = "[PLATFORM]";
 
-const SYSTEM_PROMPT = `You are the text-message assistant for a community safety service. Cameras watch for fire and smoke, and people share their location (or set a place to watch) to get alerts about it. When someone texts you, help them with whatever they need in that moment: leaving their home, finding shelter, getting somewhere, smoke or air quality, medical needs, food, water, power or phone charging, a worried family member, or anything else.
+const SYSTEM_PROMPT = `You are the text-message assistant for a community safety service. Cameras watch for fire and smoke, operators can mark any dangerous event (fire, flood, gas leak, chemical spill, violence) on a map with a danger zone around it, and people share their location (or set a place to watch) to get alerts about them. When someone texts you, help them with whatever they need in that moment: leaving their home, finding shelter, getting somewhere, smoke or air quality, medical needs, food, water, power or phone charging, a worried family member, or anything else.
+
+Getting out: when someone is inside or next to a danger zone, your first job is helping them get out. Use get_escape_route and tell them plainly which way to go and the first road to take, then offer a shelter with find_shelters. Never route anyone through a danger zone. For a gas leak or chemical hazard also tell them not to use flames or switches and to stay upwind; for flooding, never to drive or walk through moving water; for violence, to get away and hide if they can't leave, and call 911 when safe.
 
 Safety comes first. If anything suggests a threat to life right now (fire inside, trouble breathing, an injury, someone unresponsive, someone trapped), your first line is to call 911 now, before any questions.
 
@@ -36,7 +38,17 @@ Location: if you don't know where they are, or their location is out of date and
 
 Limits: you can't call anyone, dispatch help, or book rides. Say so plainly and give the person the number to call instead. They can text STOP to stop alerts.
 
-Turns that start with ${PLATFORM} come from the service, not the person (for example, a camera alert near them). Respond to those by writing the text to send the person. The person's own texts never start with ${PLATFORM}.`;
+Turns that start with ${PLATFORM} come from the service, not the person (for example, a camera alert or an operator's danger report near them). Respond to those by writing the text to send the person. The person's own texts never start with ${PLATFORM}.`;
+
+/** The service's turn telling the model about a new incident near the person. */
+export function offerPrompt(incident: KnownIncident, km: number, dangerRadiusKm: number): string {
+  const inside = km <= dangerRadiusKm;
+  if (incident.report) {
+    const details = incident.report.description ? ` Operator's details: "${incident.report.description}".` : "";
+    return `${PLATFORM} An operator reported a dangerous event: ${describeIncident(incident)}, ${km.toFixed(1)} km from this person. The danger zone is ${dangerRadiusKm} km around it, so the person is ${inside ? "INSIDE the danger zone" : "outside the danger zone but nearby"}.${details} The alert service has already texted them a short notice. Write one short text checking whether they are safe and ${inside ? "telling them which way to go to get out now (call get_escape_route first)" : "offering help, for example with a route away or a shelter"}.`;
+  }
+  return `${PLATFORM} A camera (${incident.cameraId}) confirmed fire or smoke ${km.toFixed(1)} km from this person, ${Math.round(incident.confidence * 100)}% confidence. The alert service has already texted them a short incident notice. Write one short text checking whether they are safe and offering help, for example with leaving or finding shelter. Use get_situation for details.`;
+}
 
 export type GenerateContent = (params: GenerateContentParameters) => Promise<GenerateContentResponse>;
 
@@ -99,6 +111,16 @@ export class HelpAgent {
     for (const incident of incidents) this.#incidents.set(incident.id, incident);
   }
 
+  /** A resolved or dismissed incident no longer shapes answers or routes. */
+  forgetIncident(incidentId: string): void {
+    this.#incidents.delete(incidentId);
+  }
+
+  /** Incidents the agent currently treats as active, for other surfaces (web, iOS). */
+  activeIncidents(): KnownIncident[] {
+    return [...this.#incidents.values()];
+  }
+
   /** Answer a text from a person. Always resolves to something to send. */
   reply(person: Person, text: string): Promise<string> {
     // A person can't pose as the service.
@@ -113,9 +135,10 @@ export class HelpAgent {
       if (!person.location) return;
       const km = distanceKm(incident, person.location);
       const key = `${person.senderId}:${incident.id}`;
-      if (km > this.#options.radiusKm || this.#offered.has(key)) return;
+      // Manual reports carry a danger zone: everyone within it, plus the usual margin, is offered help.
+      if (km > this.#options.radiusKm + (incident.report?.radiusKm ?? 0) || this.#offered.has(key)) return;
       this.#offered.add(key);
-      const event = `${PLATFORM} A camera (${incident.cameraId}) confirmed fire or smoke ${km.toFixed(1)} km from this person, ${Math.round(incident.confidence * 100)}% confidence. The alert service has already texted them a short incident notice. Write one short text checking whether they are safe and offering help, for example with leaving or finding shelter. Use get_situation for details.`;
+      const event = offerPrompt(incident, km, dangerRadiusKmOf(incident, this.#options.tools.dangerRadiusKm));
       const text = await this.#serialize(person.senderId, () => this.#turn(person, event));
       try {
         await this.#options.send(person.spaceId, text);

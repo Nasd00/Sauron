@@ -43,6 +43,7 @@ import { placesNearby, planRoute, searchPlaces } from './queries/places.js';
 import { panelRequest } from './queries/panelRequest.js';
 import { showInIris } from './queries/share.js';
 import { findAlprCameras } from './queries/surveillance.js';
+import { getActiveDangers, getEscapeRoute } from './queries/safety.js';
 import {
   findCctvCameras,
   findRadioStations,
@@ -124,4 +125,6 @@ export const coreTools = Object.freeze([
   getHudCaption,
   showInIris,
   panelRequest,
+  getActiveDangers,
+  getEscapeRoute,
 ]);

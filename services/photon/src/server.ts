@@ -1,5 +1,6 @@
 import { createServer, type IncomingHttpHeaders } from "node:http";
 import { GoogleGenAI } from "@google/genai";
+import type { Incident } from "@tempmhacks/shared";
 import { Spectrum } from "spectrum-ts";
 import { imessage } from "@spectrum-ts/imessage";
 import { connectDb } from "@tempmhacks/shared/db";
@@ -14,7 +15,8 @@ import { createShelterSource } from "./assist/shelters.js";
 import { createMobileApi, createMobileHttpHandler, createMobileStore } from "./mobile.js";
 import { createCommandRouter } from "./router.js";
 import { createMessagingStore } from "./store.js";
-import { normalizePhone, parseRegistration, registerPhotonUser, RegistrationError } from "./users.js";
+import { parseRegistration, registerPhotonUser, RegistrationError } from "./users.js";
+import { handleIncidentAdmin } from "./incidents.js";
 
 const config = loadConfig();
 const database = await connectDb({
@@ -23,6 +25,8 @@ const database = await connectDb({
   token: config.spacetimeToken,
 });
 const store = createMessagingStore(database.db);
+/** Photon's SpacetimeDB identity; the owner grants it operator rights so it can report incidents. */
+const dbIdentity = (database.connection as { identity?: { toHexString(): string } }).identity?.toHexString();
 const spectrumApp = await Spectrum({
   projectId: config.spectrumProjectId,
   projectSecret: config.spectrumProjectSecret,
@@ -87,11 +91,22 @@ function knownPeople(): Person[] {
 if (helpAgent) {
   // The subscription doesn't replay existing rows: incidents confirmed before startup inform answers
   // silently, and only newly confirmed ones prompt an offer of help.
-  helpAgent.loadIncidents(database.db.incidents.listConfirmed());
-  database.db.incidents.subscribe(incident => {
-    if (incident.status !== "confirmed") return;
-    helpAgent.onIncident(incident, knownPeople())
+  // Views carry an operator's report (title, details, danger radius) for manual incidents.
+  const view = (incident: Incident) => database.db.incidents.view(incident.id) ?? incident;
+  helpAgent.loadIncidents(database.db.incidents.listConfirmed().map(view));
+  const offerHelp = (incident: Incident) => {
+    if (incident.status !== "confirmed") {
+      if (incident.status === "resolved" || incident.status === "dismissed") helpAgent.forgetIncident(incident.id);
+      return;
+    }
+    helpAgent.onIncident(view(incident), knownPeople())
       .catch(error => logger.error({ incidentId: incident.id, error: String(error) }, "help_agent_incident_failed"));
+  };
+  database.db.incidents.subscribe(offerHelp);
+  // In case a report row lands after its incident; offers are once per person and incident.
+  database.db.reports.subscribe(report => {
+    const incident = database.db.incidents.get(report.incidentId);
+    if (incident) offerHelp(incident);
   });
 } else {
   logger.info({}, "help_agent_disabled: set GEMINI_API_KEY to enable");
@@ -104,20 +119,7 @@ const processMessage = createMessageProcessor({ store, route, logger });
 const handleMobile = createMobileHttpHandler({
   api: createMobileApi({
     store: createMobileStore(database.db), radiusKm: config.watchRadiusKm,
-    resolveRegistration: async phone => {
-      const user = await userDirectory.user(normalizePhone(phone));
-      const [profile, watch] = await Promise.all([
-        store.getProfileForSender(user.id),
-        store.getActiveWatch(user.id),
-      ]);
-      const registration = profile?.alertsEnabled ? profile : watch;
-      if (!registration) return undefined;
-      return {
-        userId: profile?.alertsEnabled ? profile.userId : user.id,
-        spaceId: registration.spaceId,
-        senderId: user.id,
-      };
-    },
+    dangerRadiusKm: config.assistRadiusKm, assistant: helpAgent,
     onUnexpectedError: (route, error) => logger.error({ route, error: String(error) }, "mobile_api_backend_error"),
   }),
   publicBaseUrl: config.mobilePairingBaseUrl,
@@ -137,6 +139,7 @@ function normalizedHeaders(headers: IncomingHttpHeaders): Record<string, string>
  * The web app enrolls phones from the globe, so /admin/users answers browser preflights from the
  * app's own origin (and the local Vite dev server). The admin secret is still required.
  */
+const ADMIN_PATHS = new Set(["/admin/users", "/admin/incidents", "/admin/incidents/resolve", "/admin/incidents/confirm", "/admin/incidents/dismiss"]);
 const corsOrigins = new Set([
   "http://localhost:4173",
   "http://127.0.0.1:4173",
@@ -149,14 +152,14 @@ function corsHeaders(origin: string | undefined): Record<string, string> {
   return {
     "access-control-allow-origin": origin,
     "access-control-allow-methods": "POST, OPTIONS",
-    "access-control-allow-headers": "authorization, content-type",
+    "access-control-allow-headers": "authorization, content-type, ngrok-skip-browser-warning",
     "access-control-max-age": "600",
     vary: "Origin",
   };
 }
 
 const server = createServer(async (request, response) => {
-  if (request.url === "/admin/users") {
+  if (ADMIN_PATHS.has(request.url ?? "")) {
     for (const [name, value] of Object.entries(corsHeaders(request.headers.origin))) response.setHeader(name, value);
     if (request.method === "OPTIONS") {
       response.writeHead(204).end();
@@ -174,11 +177,11 @@ const server = createServer(async (request, response) => {
     if (!response.headersSent) response.writeHead(500, { "content-type": "application/json" }).end('{"error":"internal"}');
     return;
   }
-  if (request.method !== "POST" || !["/spectrum/webhook", "/admin/users"].includes(request.url ?? "")) {
+  if (request.method !== "POST" || !(request.url === "/spectrum/webhook" || ADMIN_PATHS.has(request.url ?? ""))) {
     response.writeHead(404).end();
     return;
   }
-  if (request.url === "/admin/users" && request.headers.authorization !== `Bearer ${config.photonAdminSecret}`) {
+  if (ADMIN_PATHS.has(request.url ?? "") && request.headers.authorization !== `Bearer ${config.photonAdminSecret}`) {
     response.writeHead(401, { "content-type": "application/json" }).end('{"error":"Unauthorized"}');
     return;
   }
@@ -192,6 +195,15 @@ const server = createServer(async (request, response) => {
       return;
     }
     chunks.push(value);
+  }
+  if (request.url?.startsWith("/admin/incidents") && ADMIN_PATHS.has(request.url)) {
+    let body: unknown;
+    try { body = JSON.parse(Buffer.concat(chunks).toString("utf8")); } catch { body = undefined; }
+    const result = await handleIncidentAdmin(request.url, body, database.db.incidents, dbIdentity);
+    if (result.status < 300) logger.info({ path: request.url, incident: result.body.incident }, "incident_admin");
+    else logger.error({ path: request.url, status: result.status, error: result.body.error }, "incident_admin_failed");
+    response.writeHead(result.status, { "content-type": "application/json" }).end(JSON.stringify(result.body));
+    return;
   }
   if (request.url === "/admin/users") {
     try {
@@ -229,7 +241,7 @@ const server = createServer(async (request, response) => {
   response.writeHead(result.status, result.headers).end(Buffer.from(result.body));
 });
 
-server.listen(config.port, () => logger.info({ port: config.port, route: "/spectrum/webhook" }, "photon_server_started"));
+server.listen(config.port, () => logger.info({ port: config.port, route: "/spectrum/webhook", dbIdentity }, "photon_server_started"));
 
 async function shutdown(): Promise<void> {
   server.close();

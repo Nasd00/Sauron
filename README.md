@@ -495,8 +495,15 @@ which destroys all rows (re-seed the camera afterward with
 cameras and incidents; alert links (`/incident/:incidentId`) select and focus
 that incident, keep resolved incident details, and show explicit not-found or
 retryable database errors. The globe can also enroll a phone for alerts at a
-picked point through Photon, which needs `VITE_PHOTON_URL` and the operator key
-(`PHOTON_ADMIN_SECRET`).
+picked point through Photon. To report a dangerous event, select **Report event**,
+click the map, set the zone and headline, then send. Photon confirms it, the
+alerts worker texts enrolled people whose areas overlap it, and the iPhone app
+shows it as a nearby danger. **Activity** lets an operator confirm, dismiss, or
+resolve incidents; resolving a reported incident sends an all-clear to alerted
+conversations. These actions require `VITE_PHOTON_URL` and the operator key
+(`PHOTON_ADMIN_SECRET`), entered once per browser tab. Keep that key in Photon's
+server environment, never in a `VITE_*` value. Photon's database identity also
+needs a one-time `grant_operator` from the database owner for manual reports.
 
 ![Photorealistic 3D downtown Austin with live traffic-camera frames pinned to their intersections](docs/images/city-cameras.jpg)
 
@@ -514,7 +521,7 @@ npm run build:web
 | Variable | Purpose |
 | --- | --- |
 | `VITE_SPACETIMEDB_URI`, `VITE_SPACETIMEDB_DATABASE` | Database the browser reads |
-| `VITE_PHOTON_URL` | Photon base URL for phone enrollment |
+| `VITE_PHOTON_URL` | Photon base URL for enrollment and incident actions |
 | `VITE_CESIUM_ION_TOKEN`, `VITE_GOOGLE_MAPS_API_KEY` | Optional; OpenStreetMap imagery is used without them |
 
 `VITE_` values are compiled into public JavaScript, so never put secrets in

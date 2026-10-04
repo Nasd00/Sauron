@@ -352,7 +352,7 @@ export function createCommandRouter(options: CommandRouterOptions) {
       incident.cameraId, incident.latitude, incident.longitude, profile?.radiusKm ?? options.radiusKm,
     );
     const grounded: GroundedContext = {
-      incident, camera, latestObservation, otherNearbyCameraCount, profile,
+      incident, report: incident.report, camera, latestObservation, otherNearbyCameraCount, profile,
       liveTracked: isLiveTracked(message.senderId, device ? [device] : []),
       baseUrl: options.publicAppUrl, now: now(),
     };

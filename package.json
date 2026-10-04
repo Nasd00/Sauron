@@ -29,6 +29,7 @@
     "db:publish:maincloud": "npm run typecheck && spacetime publish --server maincloud --module-path spacetimedb $SPACETIMEDB_DATABASE",
     "test:integration": "tsx scripts/test-spacetimedb.ts",
     "test:mobile-e2e": "tsx scripts/test-mobile-e2e.ts",
+    "test:detection-e2e": "tsx scripts/test-detection-e2e.ts",
     "test:ios": "cd apps/ios && xcodebuild -project SauronLocation.xcodeproj -scheme SauronLocation -destination \"platform=iOS Simulator,name=${IOS_SIMULATOR:-iPhone 17}\" test",
     "test:ios-e2e": "tsx scripts/test-mobile-ios-e2e.ts",
     "demo:download-fixture": "tsx scripts/demo/download-fixture.ts",
@@ -39,15 +40,14 @@
     "dev:web": "npm run dev --workspace @tempmhacks/web",
     "build:web": "npm run build:shared && npm run build --workspace @tempmhacks/web",
     "dev:evac": "npm run build:shared && npm run start --workspace @tempmhacks/evac",
-    "dev:cv": "node -e \"console.log('Placeholder: implement computer vision development in services/cv/')\"",
-    "dev:incident": "node -e \"console.log('Placeholder: implement incident development in services/incident/')\"",
+    "dev:cv": "npm run build:shared && npm run dev --workspace @tempmhacks/cv",
     "dev:photon": "npm run dev --workspace @tempmhacks/photon",
     "dev:ngrok": "ngrok http --url=${NGROK_HOST:-starfish-revolving-footman.ngrok-free.dev} ${WEB_PORT:-4173}",
     "dev:stack": "bash scripts/dev-stack.sh",
     "dev:stack:health": "curl -fsS https://${NGROK_HOST:-starfish-revolving-footman.ngrok-free.dev}/health && echo",
     "photon:send-test": "npm run send-test --workspace @tempmhacks/photon --",
     "dev:alerts": "npm run dev --workspace @tempmhacks/alerts",
-    "demo:start": "node -e \"console.log('Hosted DB: set SPACETIMEDB_* in .env, then run npm run demo:seed:cameras:sdk and npm run dev:photon / npm run dev:alerts. Local DB: npm run demo:download-fixture, npm run db:publish, npm run demo:seed:cameras.')\""
+    "demo:start": "node -e \"console.log('Hosted DB: set SPACETIMEDB_* in .env, then run npm run demo:seed:cameras:sdk and npm run dev:photon / npm run dev:alerts / npm run dev:cv. Local DB: npm run demo:download-fixture, npm run db:publish, npm run demo:seed:cameras.')\""
   },
   "devDependencies": {
     "@photon-ai/proto-complete": "npm:@photon-ai/proto@0.2.3",
