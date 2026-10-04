@@ -1,7 +1,7 @@
 import { loadEnvFile } from "node:process";
 import { fileURLToPath } from "node:url";
 import { Spectrum } from "spectrum-ts";
-import { imessage } from "spectrum-ts/providers/imessage";
+import { imessage } from "@spectrum-ts/imessage";
 
 // Diagnostic only. Confirms the Spectrum credentials can open a DM and send one
 // iMessage. This is not part of the running services; it is a one-shot check.

@@ -1,7 +1,7 @@
 import { loadEnvFile } from "node:process";
 import { fileURLToPath } from "node:url";
 import { Spectrum } from "spectrum-ts";
-import { imessage } from "spectrum-ts/providers/imessage";
+import { imessage } from "@spectrum-ts/imessage";
 import { connectDb } from "@tempmhacks/shared/db";
 import { matchConfirmedIncident } from "./matcher.js";
 import { createAlertSender } from "./sender.js";
