@@ -56,7 +56,7 @@ Set these values in the ignored `.env` file:
 ```sh
 SPECTRUM_PROJECT_ID=
 SPECTRUM_PROJECT_SECRET=
-SPECTRUM_WEBHOOK_SECRET=
+SPECTRUM_WEBHOOK_SECRET=   # optional, defaults to the project secret
 SPACETIMEDB_URI=http://127.0.0.1:3000
 SPACETIMEDB_DATABASE=tempmhacks-local
 VITE_SPACETIMEDB_URI=http://127.0.0.1:3000
@@ -123,9 +123,9 @@ alerts online, including against a hosted SpacetimeDB (maincloud) database.
    changes on each restart.
 
 6. **Point Photon at the tunnel.** In the Photon dashboard, set the webhook to
-   `https://<tunnel>/spectrum/webhook` and make the dashboard signing secret
-   match `SPECTRUM_WEBHOOK_SECRET` in `.env`. Restart `dev:photon` after any
-   secret change.
+   `https://<tunnel>/spectrum/webhook`. Photon signs webhooks with the project
+   secret, so `SPECTRUM_WEBHOOK_SECRET` is optional and defaults to it.
+   Restart `dev:photon` after any secret change.
 
 7. **Drive the flow.** From an added phone, text the project's line:
    `HELP`, `WATCH Ann Arbor`, `STATUS`, `STOP`. Then seed a confirmed incident

@@ -13,6 +13,10 @@ export const UNKNOWN_REPLY = "I can currently WATCH a place, show STATUS, or STO
 export const WATCH_FORMAT_REPLY = "Send WATCH <place>, for example: WATCH Ann Arbor.";
 export const WATCH_NOT_FOUND_REPLY = "I couldn’t find that place. Try a more specific city, address, or postal code.";
 
+export function watchConfirmation(watch: Watch): string {
+  return `Watching ${watch.placeLabel} within ${watch.radiusKm} km. I’ll message you if a verified incident affects this area. Reply STATUS, STOP, or HELP anytime.`;
+}
+
 export type CommandRouterOptions = {
   store: MessagingStore;
   geocoder: Geocoder;
@@ -63,7 +67,7 @@ export function createCommandRouter(options: CommandRouterOptions) {
         createdAt: now(),
       };
       await options.store.replaceWatch(watch);
-      return `Watching ${watch.placeLabel} within ${watch.radiusKm} km. I’ll message you if a verified incident affects this area. Reply STATUS, STOP, or HELP anytime.`;
+      return watchConfirmation(watch);
     }
 
     return UNKNOWN_REPLY;

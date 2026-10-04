@@ -1,6 +1,6 @@
 import { createServer, type IncomingHttpHeaders } from "node:http";
 import { Spectrum } from "spectrum-ts";
-import { imessage } from "spectrum-ts/providers/imessage";
+import { imessage } from "@spectrum-ts/imessage";
 import { connectDb } from "@tempmhacks/shared/db";
 import { createImessageMessenger } from "@tempmhacks/messaging";
 import { loadConfig } from "./config.js";
@@ -9,6 +9,7 @@ import { normalizeSpectrumMessage } from "./normalize.js";
 import { createMessageProcessor } from "./processor.js";
 import { createCommandRouter } from "./router.js";
 import { createMessagingStore } from "./store.js";
+import { registerPhotonUser, RegistrationError } from "./users.js";
 
 const config = loadConfig();
 const database = await connectDb({
@@ -23,6 +24,11 @@ const spectrumApp = await Spectrum({
   webhookSecret: config.spectrumWebhookSecret,
   providers: [imessage.config()],
 });
+const im = imessage(spectrumApp);
+const userDirectory = {
+  user: (phone: string) => im.user(phone),
+  space: { create: (user: Awaited<ReturnType<typeof im.user>>) => im.space.create(user) },
+};
 const geocoder = new NominatimGeocoder({
   baseUrl: config.geocoderBaseUrl,
   userAgent: config.geocoderUserAgent,
@@ -45,8 +51,12 @@ const server = createServer(async (request, response) => {
     response.writeHead(200, { "content-type": "application/json" }).end('{"ok":true}');
     return;
   }
-  if (request.method !== "POST" || request.url !== "/spectrum/webhook") {
+  if (request.method !== "POST" || !["/spectrum/webhook", "/admin/users"].includes(request.url ?? "")) {
     response.writeHead(404).end();
+    return;
+  }
+  if (request.url === "/admin/users" && request.headers.authorization !== `Bearer ${config.photonAdminSecret}`) {
+    response.writeHead(401, { "content-type": "application/json" }).end('{"error":"Unauthorized"}');
     return;
   }
   const chunks: Buffer[] = [];
@@ -60,6 +70,29 @@ const server = createServer(async (request, response) => {
     }
     chunks.push(value);
   }
+  if (request.url === "/admin/users") {
+    try {
+      let body: { phone?: unknown; place?: unknown };
+      try { body = JSON.parse(Buffer.concat(chunks).toString("utf8")); } catch {
+        throw new RegistrationError("body must be JSON");
+      }
+      if (typeof body.phone !== "string") throw new RegistrationError("phone is required");
+      if (typeof body.place !== "string") throw new RegistrationError("place is required");
+      const registered = await registerPhotonUser(userDirectory, { phone: body.phone, place: body.place }, {
+        geocoder, store, radiusKm: config.watchRadiusKm,
+      });
+      logger.info({ spaceId: registered.spaceId, watchId: registered.watch.id }, "photon_user_registered");
+      response.writeHead(201, { "content-type": "application/json" }).end(JSON.stringify(registered));
+    } catch (error) {
+      const invalid = error instanceof RegistrationError;
+      if (!invalid) logger.error({ error: String(error) }, "photon_user_registration_failed");
+      response.writeHead(invalid ? 400 : 502, { "content-type": "application/json" }).end(JSON.stringify({
+        error: error instanceof Error ? error.message : String(error),
+      }));
+    }
+    return;
+  }
+
   const result = await spectrumApp.webhook(
     { body: Buffer.concat(chunks), headers: normalizedHeaders(request.headers) },
     async (space, message) => {
