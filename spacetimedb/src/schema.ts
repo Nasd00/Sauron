@@ -1,5 +1,5 @@
 import { schema, table, t, type Infer } from "spacetimedb/server";
-import type { Camera, Observation, Incident, Watch, Alert, InboundReceipt, UserAlertProfile, ConversationContext } from "@tempmhacks/shared";
+import type { Camera, Observation, Incident, Watch, Alert, InboundReceipt, UserAlertProfile, ConversationContext, MobileDevice } from "@tempmhacks/shared";
 
 // String enums stay strings on the wire, matching the shared contracts.
 // Reducers validate their allowed values before writing.
@@ -46,6 +46,12 @@ const conversationContextFields = {
   lastCameraId: t.string().optional(), lastIntent: t.string().optional(),
   alertedAt: t.f64().optional(), updatedAt: t.f64(),
 };
+const mobileDeviceFields = {
+  deviceId: t.string(), userId: t.string(), spaceId: t.string(), senderId: t.string(),
+  trackingActive: t.bool(), sharingEnabled: t.bool(), revoked: t.bool(),
+  pairedAt: t.f64(), updatedAt: t.f64(),
+  lastLocationAt: t.f64().optional(), lastAccuracyMeters: t.f64().optional(),
+};
 
 export const cameraInput = t.object("CameraInput", cameraFields);
 export const observationInput = t.object("ObservationInput", observationFields);
@@ -55,6 +61,7 @@ export const alertInput = t.object("AlertInput", alertFields);
 export const inboundReceiptInput = t.object("InboundReceiptInput", inboundReceiptFields);
 export const userAlertProfileInput = t.object("UserAlertProfileInput", userAlertProfileFields);
 export const conversationContextInput = t.object("ConversationContextInput", conversationContextFields);
+export const mobileDeviceInput = t.object("MobileDeviceInput", mobileDeviceFields);
 
 // Compile-time schema parity, allowing only the deliberate string-enum widening
 // and required undefined-valued fields used by the database's option encoding.
@@ -74,6 +81,7 @@ export type SchemaContractChecks = [
   Assert<Matches<Infer<typeof inboundReceiptInput>, InboundReceipt>>,
   Assert<Matches<Infer<typeof userAlertProfileInput>, UserAlertProfile>>,
   Assert<Matches<Infer<typeof conversationContextInput>, ConversationContext>>,
+  Assert<Matches<Infer<typeof mobileDeviceInput>, MobileDevice>>,
 ];
 
 const db = schema({
@@ -108,6 +116,20 @@ const db = schema({
   ] }, { ...userAlertProfileFields, userId: t.string().primaryKey() }),
   conversation_context: table({ name: "conversation_context", public: true }, {
     ...conversationContextFields, spaceId: t.string().primaryKey(),
+  }),
+  // Paired iPhones. Public and credential-free so Photon/alerts can read tracking state.
+  mobile_device: table({ name: "mobile_device", public: true, indexes: [
+    { accessor: "bySender", algorithm: "btree", columns: ["senderId"] },
+  ] }, { ...mobileDeviceFields, deviceId: t.string().primaryKey() }),
+  // Single-use pairing links. Only SHA-256 hashes of tokens are stored, privately.
+  mobile_pairing: table({ name: "mobile_pairing", public: false }, {
+    tokenHash: t.string().primaryKey(), userId: t.string(), spaceId: t.string(), senderId: t.string(),
+    createdAt: t.f64(), expiresAt: t.f64(), usedAt: t.f64().optional(),
+  }),
+  // Device bearer credentials (hashed), scoped to location updates for one device.
+  mobile_credential: table({ name: "mobile_credential", public: false }, {
+    tokenHash: t.string().primaryKey(), deviceId: t.string(), createdAt: t.f64(),
+    revokedAt: t.f64().optional(),
   }),
 });
 

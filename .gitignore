@@ -73,3 +73,8 @@ env/
 # Downloadable demo media (see README for the reproducible source)
 fixtures/demo/*.mp4
 !fixtures/demo/.gitkeep
+
+# Xcode
+xcuserdata/
+*.xcuserstate
+DerivedData/

@@ -49,5 +49,23 @@ export function loadConfig() {
     assistRadiusKm: positiveNumber("ASSIST_RADIUS_KM", 3),
     /** Offer the labeled Ann Arbor demo shelters alongside live FEMA open shelters. */
     assistDemoShelters: process.env.ASSIST_DEMO_SHELTERS?.trim() !== "0",
+    /**
+     * Public HTTPS URL of this Photon server (e.g. the ngrok URL). Pairing links for
+     * the Sauron iPhone app are `<url>/pair/<token>`. Unset disables WATCH ME.
+     */
+    mobilePairingBaseUrl: optionalUrl("MOBILE_PAIRING_BASE_URL"),
+    /** Apple developer team id; enables universal links via apple-app-site-association. */
+    appleTeamId: process.env.APPLE_TEAM_ID?.trim() || undefined,
+    mobileBundleId: process.env.MOBILE_APP_BUNDLE_ID?.trim() || "com.tempmhacks.sauron",
   };
+}
+
+function optionalUrl(name: string): string | undefined {
+  const value = process.env[name]?.trim();
+  if (!value) return undefined;
+  const url = new URL(value);
+  if (url.protocol !== "https:" && !["localhost", "127.0.0.1"].includes(url.hostname)) {
+    throw new Error(`${name} must be an https URL`);
+  }
+  return url.toString();
 }

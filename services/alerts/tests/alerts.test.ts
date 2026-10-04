@@ -124,3 +124,22 @@ test("watch alerts say near the place; profile alerts say near your location", (
   const profileText = formatAlertMessage(incident, profileTarget(profile("p", 0.05)), "https://downwind.example");
   assert.match(profileText, /^Verified incident about [\d.]+ mi from your shared location\./);
 });
+
+test("live-tracked profiles (Sauron app) stay matchable between movement-based uploads", async () => {
+  const store = new MemoryAlertStore();
+  const now = 10 * 60 * 60 * 1000;
+  const twoHoursAgo = now - 2 * 60 * 60 * 1000;
+  for (const item of [
+    profile("live", 0.05, { locationUpdatedAt: twoHoursAgo }),
+    profile("snapshot", 0.05, { locationUpdatedAt: twoHoursAgo }),
+    profile("stopped", 0.05, { locationUpdatedAt: twoHoursAgo }),
+    profile("live-expired", 0.05, { locationUpdatedAt: now - 7 * 60 * 60 * 1000 }),
+  ]) store.profiles.set(item.userId, item);
+  const device = (senderId: string, trackingActive = true) => ({
+    deviceId: `device-${senderId}`, userId: senderId, spaceId: `space-${senderId}`, senderId,
+    trackingActive, sharingEnabled: true, revoked: false, pairedAt: 0, updatedAt: 0, lastLocationAt: twoHoursAgo,
+  });
+  store.devices.push(device("sender-live"), device("sender-stopped", false), device("sender-live-expired"));
+  assert.equal(await matchConfirmedIncidentToProfiles(incident, store, { now }), 1);
+  assert.deepEqual(Array.from(store.alerts.keys()), ["incident-1:profile:live"]);
+});

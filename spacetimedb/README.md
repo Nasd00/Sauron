@@ -56,6 +56,26 @@ The CLI expects snake_case fields and explicit option values, for example:
 spacetime call --server local tempmhacks-local register_camera '{"id":"demo-camera-001","name":"Demo","latitude":42.28,"longitude":-83.74,"source_type":"replay","stream_url":null,"status":"online","last_seen_at":{"some":1700000000000}}'
 ```
 
+## iPhone companion app
+
+`mobile_device` (public, no credentials) records each paired iPhone.
+`mobile_pairing` and `mobile_credential` are private and store only SHA-256
+token hashes. Photon hashes tokens before calling these reducers.
+
+| Reducer | Behavior |
+| --- | --- |
+| `create_mobile_pairing(tokenHash, userId, spaceId, senderId)` | Single-use link that expires in 10 minutes |
+| `redeem_mobile_pairing(pairingTokenHash, credentialTokenHash, deviceId)` | Marks the link used and creates the device and credential. Revokes the sender's earlier devices |
+| `mobile_update_location(credentialTokenHash, lat, lng, accuracyMeters, capturedAt, defaultRadiusKm)` | Moves the user's one `user_alert_profile`. Rejects stopped tracking, accuracy worse than 500 m, and bad timestamps. Ignores out-of-order fixes |
+| `mobile_set_sharing(credentialTokenHash, enabled)` | The in-app Start/Stop toggle |
+| `mobile_check_credential(credentialTokenHash, deviceId)` | Read-only credential check |
+| `set_mobile_tracking_for_sender(senderId, active)` | `STOP` (false) / `WATCH ME` (true) |
+| `revoke_mobile_device(deviceId)` | Permanently revokes a device and its credentials |
+
+Errors start with a stable code (`pairing_invalid`, `pairing_used`,
+`pairing_expired`, `device_unauthorized`, `tracking_stopped`,
+`location_invalid`, `token_invalid`) that Photon maps to HTTP statuses.
+
 ## Verification
 
 From the repository root, `npm test` checks compilation and all lifecycle guards.

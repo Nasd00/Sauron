@@ -17,6 +17,7 @@ which is ignored by Git; `.env.example` contains placeholders only.
 | Folder | Ownership |
 | --- | --- |
 | `apps/web/` | Web application |
+| `apps/ios/` | Sauron iPhone location companion app |
 | `services/cv/` | Computer vision service |
 | `services/incident/` | Incident service |
 | `services/photon/` | Photon integration service |
@@ -186,7 +187,8 @@ bytes to Spectrum for HMAC verification, durably claims each Photon message ID,
 and then runs the deterministic command router. The SDK acknowledges webhooks
 before the command callback runs.
 
-Supported iMessage commands are `STATUS`, `HELP`, `STOP`, and `WATCH <place>`,
+Supported iMessage commands are `STATUS`, `HELP`, `STOP`, `WATCH <place>`, and
+`WATCH ME` / `PAIR` (live location from the iPhone app),
 plus sharing a location from Apple Maps and natural follow-up questions after an
 alert. The alert service matches confirmed incidents to fresh location profiles
 and active watches with Haversine distance, claims each pending alert before
@@ -225,6 +227,76 @@ Proximity matching is deterministic. A confirmed incident alerts a profile only
 when the profile is enabled, its location is fresh (30-minute window), and the
 incident is within its radius. One alert per incident/profile is enforced, with
 no duplicates on retry. `WATCH <place>` remains a secondary, place-based fallback.
+
+### Live location from the Sauron iPhone app
+
+`apps/ios/` is a small SwiftUI app whose only job is keeping the user's
+location-backed profile current. It doesn't do chat, maps, or alerts. Matching
+and delivery stay in the alerts service, and `STATUS`, `STOP`, `HELP`, and
+conversation stay in Photon.
+
+Flow:
+
+1. The user texts `WATCH ME`. Photon replies with a single-use link,
+   `<MOBILE_PAIRING_BASE_URL>/pair/<token>`, that expires after 10 minutes. The
+   token resolves server-side to the sender's `spaceId`/`senderId`, so the user
+   never types an identifier.
+2. The link page opens `sauron://pair?token=…&api=<server>`. The user taps
+   **Pair This iPhone**, and the app redeems the token at `POST /api/mobile/pair`.
+   It gets back a device token (`<deviceId>.<secret>`) and stores it in the
+   Keychain (this device only, readable after first unlock).
+3. The app requests When In Use access, then Always. It uses Core Location at
+   ~100 m accuracy with a 250 m distance filter and automatic pausing, plus
+   significant-change monitoring, which relaunches the app after it is
+   terminated. It uploads (`POST /api/mobile/location`, bearer token) only when
+   the user has moved ≥1 km from the last upload, or after 15 minutes without an
+   upload while moving. Fixes worse than 500 m are dropped.
+4. Each accepted upload moves the user's one `UserAlertProfile` in place. No
+   watches are created. A profile kept current by the app counts as fresh for
+   6 hours instead of 30 minutes, because a phone that isn't moving doesn't
+   upload.
+5. `STOP` disables the profile and the device's tracking at once; later uploads
+   get `403 tracking_stopped`. `WATCH ME` reuses the existing pairing (no new
+   setup), and `PAIR` issues a fresh link for a new phone, which replaces the
+   old device.
+
+The backend stores only SHA-256 hashes of pairing and device tokens, in private
+tables (`mobile_pairing`, `mobile_credential`). `mobile_device` is public and
+holds no credentials. The app contains no Spectrum, SpacetimeDB, or Photon
+secrets. To revoke a device:
+
+```sh
+curl -X POST "$MOBILE_PAIRING_BASE_URL/admin/mobile/revoke" \
+  -H "Authorization: Bearer $PHOTON_ADMIN_SECRET" -H 'content-type: application/json' \
+  -d '{"deviceId":"<deviceId>"}'
+```
+
+Setup: set `MOBILE_PAIRING_BASE_URL` to Photon's public HTTPS URL (the same
+ngrok URL as the webhook) and republish the module (`npm run db:publish`). Then
+open `apps/ios/SauronLocation.xcodeproj` in Xcode 26, select your team, and run
+on an iPhone. Without a team the app still builds and runs on the simulator.
+Pairing uses the `sauron://` scheme, so no Associated Domains entitlement is
+required. For universal links, set `APPLE_TEAM_ID` (Photon then serves
+`/.well-known/apple-app-site-association`) and add the
+`applinks:<host>` entitlement.
+
+Tests:
+
+```sh
+npm run test:ios                      # unit tests on the simulator (IOS_SIMULATOR, default "iPhone 17")
+npm run test:mobile-e2e               # backend flow against a published local module
+npm run test:ios-e2e                  # drives the real app on a simulator against a local module
+```
+
+Both e2e scripts read `SPACETIMEDB_URI`/`SPACETIMEDB_DATABASE`, refuse
+non-local servers, and leave uniquely named rows behind. `test:ios-e2e`
+reinstalls the app, resets its location permission, accepts the real prompts,
+and checks that a 450 m move doesn't upload, while >1 km moves do, both in the
+foreground and in the background, and after a relaunch.
+
+Limitation: iOS delivers no location while the phone is stationary, so a phone
+that stays put for more than 6 hours ages out of matching until it moves or the
+app is opened. Opening the app refreshes the location.
 
 ### Grounded conversational follow-ups
 

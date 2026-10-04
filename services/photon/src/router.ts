@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
-import type { ConversationContext, UserAlertProfile, Watch } from "@tempmhacks/shared";
-import { evaluateLocationFreshness } from "@tempmhacks/shared/geo";
+import type { ConversationContext, MobileDevice, UserAlertProfile, Watch } from "@tempmhacks/shared";
+import { evaluateProfileFreshness, isLiveTracked } from "@tempmhacks/shared/geo";
 import { answerFollowUp, classifyFollowUp, type GroundedContext } from "./answer.js";
 import type { HelpAgent, Person } from "./assist/agent.js";
 import { classifyLocationShare, type ParsedLocation } from "./location.js";
+import { issuePairingLink, MOBILE_PAIRING_TTL_MINUTES } from "./mobile.js";
 import type { Geocoder, InboundMessage, MessagingStore, NativeShareKind } from "./types.js";
 
 /** The one supported way to share location: Apple Maps → blue dot → Share → Messages. */
@@ -14,6 +15,7 @@ export const HELP_REPLY = [
   `I alert you about verified incidents near your location.\n\n${APPLE_MAPS_SHARE_HINT}`,
   [
     "STATUS — what I’m monitoring",
+    "WATCH ME — live location (iPhone app)",
     "WATCH <place> — watch a place",
     "STOP — unsubscribe",
     "After an alert, just ask: “what happened?” or “show me”.",
@@ -52,6 +54,21 @@ export const NO_LOCATION_REPLIES = {
   ].join("\n") + `\n\n${APPLE_MAPS_SHARE_HINT}`,
 } as const;
 
+export const MOBILE_UNAVAILABLE_REPLY =
+  "Live location from the iPhone app isn’t set up on this line yet. Share your location from Apple Maps instead.";
+
+export function pairingReply(link: string): string {
+  return [
+    "📲 Keep your location current with the Sauron iPhone app.",
+    `Open this link on your iPhone (works once, expires in ${MOBILE_PAIRING_TTL_MINUTES} minutes):\n${link}`,
+  ].join("\n\n");
+}
+
+export const TRACKING_RESUMED_REPLY = [
+  "✅ Live location is back on. The Sauron app resumes updating your location the next time you move or open it.",
+  "New phone? Reply PAIR for a fresh setup link.",
+].join("\n\n");
+
 export type RouterReply = { text: string; sendEvidence?: boolean; evidenceUrl?: string };
 
 export function watchConfirmation(watch: Watch): string {
@@ -69,6 +86,11 @@ export type CommandRouterOptions = {
    * keeps answering someone mid-conversation (commands and location shares still come first).
    */
   assistant?: Pick<HelpAgent, "isActive" | "end" | "reply">;
+  /**
+   * Public HTTPS base URL that serves `/pair/<token>` (Photon itself). When unset,
+   * WATCH ME / PAIR explain that live location isn’t available.
+   */
+  mobilePairingBaseUrl?: string;
   now?: () => number;
   id?: () => string;
 };
@@ -100,8 +122,29 @@ export function createCommandRouter(options: CommandRouterOptions) {
   const now = options.now ?? Date.now;
   const id = options.id ?? randomUUID;
 
-  function freshness(profile: UserAlertProfile) {
-    return evaluateLocationFreshness(profile.locationUpdatedAt, now());
+  /** Freshness, with the longer window when the Sauron app keeps the location current. */
+  function freshness(profile: UserAlertProfile, device?: MobileDevice) {
+    return evaluateProfileFreshness(profile, isLiveTracked(profile.senderId, device ? [device] : []), now());
+  }
+
+  /** WATCH ME reuses a still-valid paired device; PAIR (or no device) issues a fresh link. */
+  async function handleWatchMe(message: InboundMessage, forceNewLink: boolean): Promise<RouterReply> {
+    if (!options.mobilePairingBaseUrl) return { text: MOBILE_UNAVAILABLE_REPLY };
+    const device = forceNewLink ? undefined : await options.store.getMobileDevice(message.senderId);
+    if (device) {
+      await options.store.setMobileTracking(message.senderId, true);
+      // Re-enable the location-backed profile now; the app's next upload refreshes it.
+      const profile = await options.store.getProfileForSender(message.senderId);
+      if (profile && !profile.alertsEnabled) await options.store.setAlertsEnabled(profile.userId, true);
+      return { text: TRACKING_RESUMED_REPLY };
+    }
+    const profile = await options.store.getProfileForSender(message.senderId);
+    const link = await issuePairingLink(
+      { createPairing: input => options.store.createMobilePairing(input) },
+      options.mobilePairingBaseUrl,
+      { userId: profile?.userId ?? message.senderId, spaceId: message.spaceId, senderId: message.senderId },
+    );
+    return { text: pairingReply(link) };
   }
 
   async function handleLocation(
@@ -136,7 +179,8 @@ export function createCommandRouter(options: CommandRouterOptions) {
       text: [
         `✅ Location received. I saved ${what}.`,
         `I’ll alert you about verified incidents within ~${miles(profile.radiusKm)} mi${wasPaused ? ", and your alerts are back on" : ""}.`,
-      ].join("\n") + "\n\nThis is a one-time snapshot, not live tracking. Share again from Apple Maps whenever you move.",
+      ].join("\n") + "\n\nThis is a one-time snapshot, not live tracking. Share again from Apple Maps whenever you move" +
+        (options.mobilePairingBaseUrl ? ", or reply WATCH ME for live location on iPhone." : "."),
     };
   }
 
@@ -146,17 +190,20 @@ export function createCommandRouter(options: CommandRouterOptions) {
 
   /** Where the person is for the help agent: a fresh shared location, else their watch, else a stale share. */
   async function personFor(message: InboundMessage): Promise<Person> {
-    const [profile, watch] = await Promise.all([
+    const [profile, watch, device] = await Promise.all([
       options.store.getProfileForSender(message.senderId),
       options.store.getActiveWatch(message.senderId),
+      options.store.getMobileDevice(message.senderId),
     ]);
     const base = { senderId: message.senderId, spaceId: message.spaceId };
     const shared = profile?.alertsEnabled ? profile : undefined;
-    const { fresh, ageMs } = shared ? freshness(shared) : { fresh: false, ageMs: 0 };
+    const { fresh, ageMs } = shared ? freshness(shared, device) : { fresh: false, ageMs: 0 };
     if (shared && (fresh || !watch)) {
+      const source = shared && isLiveTracked(shared.senderId, device ? [device] : [])
+        ? "their live location from the Sauron app, updated" : "the location they shared from Apple Maps";
       return {
         ...base,
-        place: `the location they shared from Apple Maps ${formatAge(ageMs)}${fresh ? "" : " (out of date)"}`,
+        place: `${source} ${formatAge(ageMs)}${fresh ? "" : " (out of date)"}`,
         location: { latitude: shared.latitude, longitude: shared.longitude },
       };
     }
@@ -176,6 +223,8 @@ export function createCommandRouter(options: CommandRouterOptions) {
       // pre-STOP incident. (No row-delete reducer exists; disabled is the durable
       // un-enrolled state.)
       await options.store.deactivateWatches(message.senderId);
+      // The paired iPhone keeps its pairing, but its uploads are rejected until WATCH ME.
+      await options.store.setMobileTracking(message.senderId, false);
       const profile = await options.store.getProfileForSender(message.senderId);
       if (profile) await options.store.setAlertsEnabled(profile.userId, false);
       await options.store.clearConversationContext(message.spaceId);
@@ -186,23 +235,32 @@ export function createCommandRouter(options: CommandRouterOptions) {
     // STOP is the only opt-out (it unsubscribes from everything).
     if (/^ALERTS\b/i.test(input)) return { text: ALERTS_ALWAYS_ON_REPLY };
     if (/^STATUS$/i.test(input)) {
-      const [profile, watch] = await Promise.all([
+      const [profile, watch, device] = await Promise.all([
         options.store.getProfileForSender(message.senderId),
         options.store.getActiveWatch(message.senderId),
+        options.store.getMobileDevice(message.senderId),
       ]);
       const lines: string[] = [];
+      const live = profile !== undefined && isLiveTracked(profile.senderId, device ? [device] : []);
       if (!profile) {
         lines.push(`📍 I don’t have a location for you.\n\n${APPLE_MAPS_SHARE_HINT}`);
       } else {
-        const { fresh, ageMs } = freshness(profile);
+        const { fresh, ageMs } = freshness(profile, device);
         const age = formatAge(ageMs);
         if (!profile.alertsEnabled) {
           lines.push(`📍 You’re unsubscribed, so I’m not monitoring a location for you.\n\n${APPLE_MAPS_SHARE_HINT}`);
         } else if (!fresh) {
           lines.push(`📍 Your last location was received ${age} and is out of date, so alerts may be inaccurate.\n\n${APPLE_MAPS_SHARE_HINT}`);
+        } else if (live) {
+          lines.push(`📍 Live location from the Sauron app, updated ${age}. Monitoring within ~${miles(profile.radiusKm)} mi.`);
         } else {
           lines.push(`📍 Location received ${age}. Monitoring within ~${miles(profile.radiusKm)} mi.`);
         }
+      }
+      if (device && profile?.alertsEnabled && !device.trackingActive) {
+        lines.push("The Sauron app is paired but live location is off. Reply WATCH ME to turn it back on.");
+      } else if (device && profile?.alertsEnabled && !device.sharingEnabled) {
+        lines.push("The Sauron app is paired, but sharing is stopped in the app. Open it and tap Start Sharing.");
       }
       if (watch) lines.push(`Also watching ${watch.placeLabel} within ${watch.radiusKm} km.`);
       return { text: lines.join("\n") };
@@ -218,6 +276,10 @@ export function createCommandRouter(options: CommandRouterOptions) {
       });
     }
     if (share?.kind === "unreadable") return noLocation(share.reason);
+
+    // Live location from the iPhone app. Must precede WATCH <place>.
+    if (/^WATCH\s+ME$/i.test(input)) return handleWatchMe(message, false);
+    if (/^PAIR$/i.test(input)) return handleWatchMe(message, true);
 
     const watchMatch = /^WATCH(?:\s+(.*))?$/i.exec(input);
     if (watchMatch) {
@@ -266,7 +328,7 @@ export function createCommandRouter(options: CommandRouterOptions) {
         text: `You’re currently unsubscribed. To start again, share your location.\n\n${APPLE_MAPS_SHARE_HINT}`,
       };
     }
-    if (!freshness(profile).fresh) {
+    if (!freshness(profile, await options.store.getMobileDevice(message.senderId)).fresh) {
       return { text: `${UNKNOWN_REPLY}\nYour location is out of date, so please share it again.\n\n${APPLE_MAPS_SHARE_HINT}` };
     }
     return { text: UNKNOWN_REPLY };
@@ -281,15 +343,17 @@ export function createCommandRouter(options: CommandRouterOptions) {
     const incident = await options.store.getIncident(context.activeIncidentId);
     if (!incident) return undefined;
     const camera = await options.store.getCamera(incident.cameraId);
-    const [latestObservation, profile] = await Promise.all([
+    const [latestObservation, profile, device] = await Promise.all([
       options.store.getLatestObservation(incident.cameraId),
       options.store.getProfileForSender(message.senderId),
+      options.store.getMobileDevice(message.senderId),
     ]);
     const otherNearbyCameraCount = await options.store.countOtherNearbyCameras(
       incident.cameraId, incident.latitude, incident.longitude, profile?.radiusKm ?? options.radiusKm,
     );
     const grounded: GroundedContext = {
       incident, camera, latestObservation, otherNearbyCameraCount, profile,
+      liveTracked: isLiveTracked(message.senderId, device ? [device] : []),
       baseUrl: options.publicAppUrl, now: now(),
     };
     const answer = answerFollowUp(intent, grounded);

@@ -1,7 +1,7 @@
 import type { Camera, Incident, Observation, UserAlertProfile } from "@tempmhacks/shared";
 import { incidentUrl } from "@tempmhacks/shared";
 import {
-  evaluateLocationFreshness, haversineDistanceKm, kilometersToMiles,
+  evaluateProfileFreshness, haversineDistanceKm, kilometersToMiles,
 } from "@tempmhacks/shared/geo";
 
 /**
@@ -53,6 +53,8 @@ export type GroundedContext = {
   otherNearbyCameraCount?: number;
   /** The asking user's profile, enabling grounded "how far from me". */
   profile?: UserAlertProfile;
+  /** True when the Sauron iPhone app keeps the profile location current. */
+  liveTracked?: boolean;
   baseUrl: string;
   now: number;
 };
@@ -76,7 +78,7 @@ function formatMiles(km: number): string {
 function distanceSentence(context: GroundedContext): string | undefined {
   const { profile, incident } = context;
   if (!profile) return undefined;
-  const { fresh } = evaluateLocationFreshness(profile.locationUpdatedAt, context.now);
+  const { fresh } = evaluateProfileFreshness(profile, context.liveTracked ?? false, context.now);
   const km = haversineDistanceKm(incident.latitude, incident.longitude, profile.latitude, profile.longitude);
   const miles = formatMiles(km);
   return fresh

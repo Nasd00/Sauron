@@ -40,6 +40,7 @@ import ConfirmIncidentReducer from "./confirm_incident_reducer";
 import CreateAlertReducer from "./create_alert_reducer";
 import CreateAlertForProfileReducer from "./create_alert_for_profile_reducer";
 import CreateIncidentReducer from "./create_incident_reducer";
+import CreateMobilePairingReducer from "./create_mobile_pairing_reducer";
 import CreateWatchReducer from "./create_watch_reducer";
 import DeactivateWatchesForSenderReducer from "./deactivate_watches_for_sender_reducer";
 import DismissIncidentReducer from "./dismiss_incident_reducer";
@@ -47,11 +48,17 @@ import InsertAlertReducer from "./insert_alert_reducer";
 import InsertWatchReducer from "./insert_watch_reducer";
 import MarkAlertFailedReducer from "./mark_alert_failed_reducer";
 import MarkAlertSentReducer from "./mark_alert_sent_reducer";
+import MobileCheckCredentialReducer from "./mobile_check_credential_reducer";
+import MobileSetSharingReducer from "./mobile_set_sharing_reducer";
+import MobileUpdateLocationReducer from "./mobile_update_location_reducer";
 import PublishObservationReducer from "./publish_observation_reducer";
+import RedeemMobilePairingReducer from "./redeem_mobile_pairing_reducer";
 import RegisterCameraReducer from "./register_camera_reducer";
 import ResolveIncidentReducer from "./resolve_incident_reducer";
+import RevokeMobileDeviceReducer from "./revoke_mobile_device_reducer";
 import SetAlertsEnabledReducer from "./set_alerts_enabled_reducer";
 import SetCameraStatusReducer from "./set_camera_status_reducer";
+import SetMobileTrackingForSenderReducer from "./set_mobile_tracking_for_sender_reducer";
 import UpdateIncidentDetectionReducer from "./update_incident_detection_reducer";
 import UpsertConversationContextReducer from "./upsert_conversation_context_reducer";
 import UpsertUserAlertProfileReducer from "./upsert_user_alert_profile_reducer";
@@ -63,6 +70,7 @@ import AlertRow from "./alert_table";
 import CameraRow from "./camera_table";
 import ConversationContextRow from "./conversation_context_table";
 import IncidentRow from "./incident_table";
+import MobileDeviceRow from "./mobile_device_table";
 import ObservationRow from "./observation_table";
 import UserAlertProfileRow from "./user_alert_profile_table";
 import WatchRow from "./watch_table";
@@ -124,6 +132,20 @@ const tablesSchema = __schema({
       { name: 'incident_id_key', constraint: 'unique', columns: ['id'] },
     ],
   }, IncidentRow),
+  mobileDevice: __table({
+    name: 'mobile_device',
+    indexes: [
+      { accessor: 'deviceId', name: 'mobile_device_device_id_idx_btree', algorithm: 'btree', columns: [
+        'deviceId',
+      ] },
+      { accessor: 'bySender', name: 'mobile_device_sender_id_idx_btree', algorithm: 'btree', columns: [
+        'senderId',
+      ] },
+    ],
+    constraints: [
+      { name: 'mobile_device_device_id_key', constraint: 'unique', columns: ['deviceId'] },
+    ],
+  }, MobileDeviceRow),
   observation: __table({
     name: 'observation',
     indexes: [
@@ -184,6 +206,7 @@ const reducersSchema = __reducers(
   __reducerSchema("create_alert", CreateAlertReducer),
   __reducerSchema("create_alert_for_profile", CreateAlertForProfileReducer),
   __reducerSchema("create_incident", CreateIncidentReducer),
+  __reducerSchema("create_mobile_pairing", CreateMobilePairingReducer),
   __reducerSchema("create_watch", CreateWatchReducer),
   __reducerSchema("deactivate_watches_for_sender", DeactivateWatchesForSenderReducer),
   __reducerSchema("dismiss_incident", DismissIncidentReducer),
@@ -191,11 +214,17 @@ const reducersSchema = __reducers(
   __reducerSchema("insert_watch", InsertWatchReducer),
   __reducerSchema("mark_alert_failed", MarkAlertFailedReducer),
   __reducerSchema("mark_alert_sent", MarkAlertSentReducer),
+  __reducerSchema("mobile_check_credential", MobileCheckCredentialReducer),
+  __reducerSchema("mobile_set_sharing", MobileSetSharingReducer),
+  __reducerSchema("mobile_update_location", MobileUpdateLocationReducer),
   __reducerSchema("publish_observation", PublishObservationReducer),
+  __reducerSchema("redeem_mobile_pairing", RedeemMobilePairingReducer),
   __reducerSchema("register_camera", RegisterCameraReducer),
   __reducerSchema("resolve_incident", ResolveIncidentReducer),
+  __reducerSchema("revoke_mobile_device", RevokeMobileDeviceReducer),
   __reducerSchema("set_alerts_enabled", SetAlertsEnabledReducer),
   __reducerSchema("set_camera_status", SetCameraStatusReducer),
+  __reducerSchema("set_mobile_tracking_for_sender", SetMobileTrackingForSenderReducer),
   __reducerSchema("update_incident_detection", UpdateIncidentDetectionReducer),
   __reducerSchema("upsert_conversation_context", UpsertConversationContextReducer),
   __reducerSchema("upsert_user_alert_profile", UpsertUserAlertProfileReducer),
@@ -209,6 +238,8 @@ type __SchemaWithTableAccessorAliases = Omit<typeof tablesSchema.schemaType, "ta
   tables: typeof tablesSchema.schemaType.tables & {
     /** @deprecated Use `conversationContext` instead. This alias will be removed in the next major version. */
     readonly "conversation_context": Omit<typeof tablesSchema.schemaType.tables["conversationContext"], "accessorName"> & { readonly accessorName: "conversation_context" };
+    /** @deprecated Use `mobileDevice` instead. This alias will be removed in the next major version. */
+    readonly "mobile_device": Omit<typeof tablesSchema.schemaType.tables["mobileDevice"], "accessorName"> & { readonly accessorName: "mobile_device" };
     /** @deprecated Use `userAlertProfile` instead. This alias will be removed in the next major version. */
     readonly "user_alert_profile": Omit<typeof tablesSchema.schemaType.tables["userAlertProfile"], "accessorName"> & { readonly accessorName: "user_alert_profile" };
   };
@@ -230,6 +261,7 @@ const REMOTE_MODULE = {
 
 const tableAccessorAliases = {
   "conversation_context": "conversationContext",
+  "mobile_device": "mobileDevice",
   "user_alert_profile": "userAlertProfile",
 } as const;
 
@@ -253,6 +285,8 @@ type __DbViewBase = __DbConnectionImpl<typeof REMOTE_MODULE>["db"];
 export type DbView = __DbViewBase & {
   /** @deprecated Use `conversationContext` instead. This alias will be removed in the next major version. */
   readonly "conversation_context": __DbViewBase["conversationContext"];
+  /** @deprecated Use `mobileDevice` instead. This alias will be removed in the next major version. */
+  readonly "mobile_device": __DbViewBase["mobileDevice"];
   /** @deprecated Use `userAlertProfile` instead. This alias will be removed in the next major version. */
   readonly "user_alert_profile": __DbViewBase["userAlertProfile"];
 };
@@ -261,6 +295,8 @@ type __TablesBase = __QueryBuilder<typeof tablesSchema.schemaType>;
 export type Tables = __TablesBase & {
   /** @deprecated Use `conversationContext` instead. This alias will be removed in the next major version. */
   readonly "conversation_context": __TablesBase["conversationContext"];
+  /** @deprecated Use `mobileDevice` instead. This alias will be removed in the next major version. */
+  readonly "mobile_device": __TablesBase["mobileDevice"];
   /** @deprecated Use `userAlertProfile` instead. This alias will be removed in the next major version. */
   readonly "user_alert_profile": __TablesBase["userAlertProfile"];
 };

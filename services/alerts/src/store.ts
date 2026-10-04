@@ -1,4 +1,4 @@
-import type { Alert, Incident, UserAlertProfile, Watch } from "@tempmhacks/shared";
+import type { Alert, Incident, MobileDevice, UserAlertProfile, Watch } from "@tempmhacks/shared";
 import type { Db } from "@tempmhacks/shared/db";
 import type { AlertMatcherStore, ProfileAlertMatcherStore } from "./matcher.js";
 import type { PendingAlertStore } from "./sender.js";
@@ -20,6 +20,7 @@ export function createAlertServiceStore(db: Db): AlertServiceStore {
       }
     },
     listProfiles: async () => db.profiles.list(),
+    listMobileDevices: async () => db.mobile.listDevices(),
     createProfileAlert: async (incidentId, userId) => {
       try {
         await db.alerts.createForProfile(incidentId, userId);
@@ -91,6 +92,7 @@ export function profileTarget(profile: UserAlertProfile): AlertTarget {
 export class MemoryAlertStore implements AlertServiceStore {
   readonly watches = new Map<string, Watch>();
   readonly profiles = new Map<string, UserAlertProfile>();
+  readonly devices: MobileDevice[] = [];
   readonly incidents = new Map<string, Incident>();
   readonly alerts = new Map<string, Alert>();
   readonly contexts = new Map<string, { spaceId: string; activeIncidentId: string; alertedAt: number }>();
@@ -108,6 +110,10 @@ export class MemoryAlertStore implements AlertServiceStore {
 
   async listProfiles(): Promise<UserAlertProfile[]> {
     return Array.from(this.profiles.values());
+  }
+
+  async listMobileDevices(): Promise<MobileDevice[]> {
+    return this.devices;
   }
 
   async createProfileAlert(incidentId: string, userId: string): Promise<boolean> {

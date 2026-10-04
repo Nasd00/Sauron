@@ -1,6 +1,6 @@
 import type { Db } from "@tempmhacks/shared/db";
 import type {
-  Camera, ConversationContext, Incident, InboundReceipt, Observation, UserAlertProfile, Watch,
+  Camera, ConversationContext, Incident, InboundReceipt, MobileDevice, Observation, UserAlertProfile, Watch,
 } from "@tempmhacks/shared";
 import { haversineDistanceKm } from "@tempmhacks/shared/geo";
 import type { InboundMessage, MessagingStore } from "./types.js";
@@ -52,6 +52,9 @@ export function createMessagingStore(db: Db): MessagingStore {
         camera.status === "online" &&
         haversineDistanceKm(latitude, longitude, camera.latitude, camera.longitude) <= radiusKm,
       ).length,
+    getMobileDevice: async senderId => db.mobile.getActiveDeviceForSender(senderId),
+    createMobilePairing: input => db.mobile.createPairing(input),
+    setMobileTracking: (senderId, active) => db.mobile.setTrackingForSender(senderId, active),
   };
 }
 
@@ -63,6 +66,22 @@ export class MemoryMessagingStore implements MessagingStore {
   readonly incidents = new Map<string, Incident>();
   readonly cameras = new Map<string, Camera>();
   readonly observations: Observation[] = [];
+  readonly devices: MobileDevice[] = [];
+  readonly pairings: { tokenHash: string; userId: string; spaceId: string; senderId: string }[] = [];
+
+  async getMobileDevice(senderId: string): Promise<MobileDevice | undefined> {
+    return this.devices.find(device => device.senderId === senderId && !device.revoked);
+  }
+
+  async createMobilePairing(input: { tokenHash: string; userId: string; spaceId: string; senderId: string }): Promise<void> {
+    this.pairings.push(input);
+  }
+
+  async setMobileTracking(senderId: string, active: boolean): Promise<void> {
+    for (const device of this.devices) {
+      if (device.senderId === senderId && !device.revoked) device.trackingActive = active;
+    }
+  }
 
   async claimInbound(message: InboundMessage): Promise<boolean> {
     if (this.messageIds.has(message.messageId)) return false;
