@@ -81,8 +81,10 @@ export type Db = {
   incidents: {
     subscribe(callback: RowCallback<Incident>): () => void;
     get(id: string): Incident | undefined;
+    list(): Incident[];
     listConfirmed(): Incident[];
     create(incident: Incident): Promise<void>;
+    updateDetection(id: string, confidence: number, lastSeenAt: number): Promise<void>;
     confirm(id: string): Promise<void>;
     dismiss(id: string): Promise<void>;
     resolve(id: string, resolvedAt?: number): Promise<void>;
@@ -171,9 +173,12 @@ export function createDb(connection: GeneratedDbConnection): Db {
         for (const row of connection.db.incident.iter()) if (row.id === id) return toIncident(row);
         return undefined;
       },
+      list: () => Array.from(connection.db.incident.iter(), toIncident),
       listConfirmed: () => Array.from(connection.db.incident.iter(), toIncident)
         .filter(incident => incident.status === "confirmed"),
       create: incident => connection.reducers.createIncident({ input: incident }),
+      updateDetection: (id, confidence, lastSeenAt) =>
+        connection.reducers.updateIncidentDetection({ id, confidence, lastSeenAt }),
       confirm: id => connection.reducers.confirmIncident({ id, confirmedAt: Date.now() }),
       dismiss: id => connection.reducers.dismissIncident({ id }),
       resolve: (id, resolvedAt = Date.now()) => connection.reducers.resolveIncident({ id, resolvedAt }),

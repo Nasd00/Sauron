@@ -39,12 +39,11 @@
     "dev:web": "npm run dev --workspace @tempmhacks/web",
     "build:web": "npm run build:shared && npm run build --workspace @tempmhacks/web",
     "dev:evac": "npm run build:shared && npm run start --workspace @tempmhacks/evac",
-    "dev:cv": "node -e \"console.log('Placeholder: implement computer vision development in services/cv/')\"",
-    "dev:incident": "node -e \"console.log('Placeholder: implement incident development in services/incident/')\"",
+    "dev:cv": "npm run build:shared && npm run dev --workspace @tempmhacks/cv",
     "dev:photon": "npm run dev --workspace @tempmhacks/photon",
     "photon:send-test": "npm run send-test --workspace @tempmhacks/photon --",
     "dev:alerts": "npm run dev --workspace @tempmhacks/alerts",
-    "demo:start": "node -e \"console.log('Hosted DB: set SPACETIMEDB_* in .env, then run npm run demo:seed:cameras:sdk and npm run dev:photon / npm run dev:alerts. Local DB: npm run demo:download-fixture, npm run db:publish, npm run demo:seed:cameras.')\""
+    "demo:start": "node -e \"console.log('Hosted DB: set SPACETIMEDB_* in .env, then run npm run demo:seed:cameras:sdk and npm run dev:photon / npm run dev:alerts / npm run dev:cv. Local DB: npm run demo:download-fixture, npm run db:publish, npm run demo:seed:cameras.')\""
   },
   "devDependencies": {
     "@photon-ai/proto-complete": "npm:@photon-ai/proto@0.2.3",
