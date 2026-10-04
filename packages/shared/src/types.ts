@@ -121,6 +121,34 @@ export type ConversationContext = {
   updatedAt: number;
 };
 
+/**
+ * An iPhone running the Sauron location companion app, paired to one Spectrum
+ * user through a single-use pairing link. The device keeps that user's
+ * {@link UserAlertProfile} location current; it never sends messages itself.
+ * Contains no credentials: device-token hashes live in a private table.
+ */
+export type MobileDevice = {
+  deviceId: string;
+  /** The {@link UserAlertProfile.userId} this device updates. */
+  userId: string;
+  spaceId: string;
+  senderId: string;
+  /**
+   * Consent from the messaging channel: true after pairing or `WATCH ME`, false
+   * after `STOP`. While false, location uploads are rejected.
+   */
+  trackingActive: boolean;
+  /** The in-app Start/Stop Sharing toggle. */
+  sharingEnabled: boolean;
+  /** Revoked devices are permanently rejected; pair again to replace them. */
+  revoked: boolean;
+  pairedAt: number;
+  updatedAt: number;
+  /** Capture time of the most recent accepted location upload. */
+  lastLocationAt?: number;
+  lastAccuracyMeters?: number;
+};
+
 export function incidentUrl(baseUrl: string, incidentId: string): string {
   const base = new URL(baseUrl);
   const normalizedPath = base.pathname.replace(/\/$/, "");

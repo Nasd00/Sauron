@@ -1,11 +1,11 @@
 import type {
   AlertRow, CameraRow, GeneratedDbConnection, IncidentRow, ObservationRow, RowCallback,
-  WatchRow, UserAlertProfileRow, ConversationContextRow,
+  WatchRow, UserAlertProfileRow, ConversationContextRow, MobileDeviceRow,
 } from "@tempmhacks/db-generated";
 import { DbConnection } from "@tempmhacks/db-generated";
 import type {
   Alert, Camera, Incident, InboundReceipt, Observation, Watch,
-  UserAlertProfile, ConversationContext,
+  UserAlertProfile, ConversationContext, MobileDevice,
 } from "./types.js";
 
 export type Subscription<Row> = (callback: RowCallback<Row>) => () => void;
@@ -61,6 +61,10 @@ function toConversationContext(row: ConversationContextRow): ConversationContext
   return { ...row };
 }
 
+function toMobileDevice(row: MobileDeviceRow): MobileDevice {
+  return { ...row };
+}
+
 export type Db = {
   cameras: {
     subscribe(callback: RowCallback<Camera>): () => void;
@@ -113,6 +117,24 @@ export type Db = {
   conversationContexts: {
     get(spaceId: string): ConversationContext | undefined;
     upsert(context: ConversationContext): Promise<void>;
+  };
+  /** Sauron iPhone companion app. Token arguments are SHA-256 hex hashes, never raw tokens. */
+  mobile: {
+    listDevices(): MobileDevice[];
+    getDevice(deviceId: string): MobileDevice | undefined;
+    /** The sender's current (non-revoked) paired device, if any. */
+    getActiveDeviceForSender(senderId: string): MobileDevice | undefined;
+    createPairing(input: { tokenHash: string; userId: string; spaceId: string; senderId: string }): Promise<void>;
+    redeemPairing(input: { pairingTokenHash: string; credentialTokenHash: string; deviceId: string }): Promise<void>;
+    updateLocation(input: {
+      credentialTokenHash: string; latitude: number; longitude: number;
+      accuracyMeters: number; capturedAt: number; defaultRadiusKm: number;
+    }): Promise<void>;
+    setSharing(credentialTokenHash: string, enabled: boolean): Promise<void>;
+    /** Throws device_unauthorized unless the credential belongs to this device. */
+    checkCredential(credentialTokenHash: string, deviceId: string): Promise<void>;
+    setTrackingForSender(senderId: string, active: boolean): Promise<void>;
+    revokeDevice(deviceId: string): Promise<void>;
   };
 };
 
@@ -216,6 +238,31 @@ export function createDb(connection: GeneratedDbConnection): Db {
         return undefined;
       },
       upsert: context => connection.reducers.upsertConversationContext({ input: context }),
+    },
+    mobile: {
+      listDevices: () => Array.from(connection.db.mobile_device.iter(), toMobileDevice),
+      getDevice: deviceId => {
+        for (const row of connection.db.mobile_device.iter()) {
+          if (row.deviceId === deviceId) return toMobileDevice(row);
+        }
+        return undefined;
+      },
+      getActiveDeviceForSender: senderId => {
+        for (const row of connection.db.mobile_device.iter()) {
+          if (row.senderId === senderId && !row.revoked) return toMobileDevice(row);
+        }
+        return undefined;
+      },
+      createPairing: input => connection.reducers.createMobilePairing(input),
+      redeemPairing: input => connection.reducers.redeemMobilePairing(input),
+      updateLocation: input => connection.reducers.mobileUpdateLocation(input),
+      setSharing: (credentialTokenHash, enabled) =>
+        connection.reducers.mobileSetSharing({ credentialTokenHash, enabled }),
+      checkCredential: (credentialTokenHash, deviceId) =>
+        connection.reducers.mobileCheckCredential({ credentialTokenHash, deviceId }),
+      setTrackingForSender: (senderId, active) =>
+        connection.reducers.setMobileTrackingForSender({ senderId, active }),
+      revokeDevice: deviceId => connection.reducers.revokeMobileDevice({ deviceId }),
     },
   };
 }

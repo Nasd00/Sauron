@@ -34,6 +34,11 @@ export type ConversationContextRow = {
   spaceId: string; activeIncidentId?: string; lastCameraId?: string;
   lastIntent?: string; alertedAt?: number; updatedAt: number;
 };
+export type MobileDeviceRow = {
+  deviceId: string; userId: string; spaceId: string; senderId: string;
+  trackingActive: boolean; sharingEnabled: boolean; revoked: boolean;
+  pairedAt: number; updatedAt: number; lastLocationAt?: number; lastAccuracyMeters?: number;
+};
 
 export type RowCallback<Row> = (row: Row) => void;
 export type RowTable<Row> = {
@@ -61,6 +66,7 @@ export type GeneratedDbConnection = {
     watch: RowTable<WatchRow>;
     user_alert_profile: RowTable<UserAlertProfileRow>;
     conversation_context: RowTable<ConversationContextRow>;
+    mobile_device: RowTable<MobileDeviceRow>;
   };
   reducers: {
     registerCamera(args: { camera: CameraRow }): Promise<void>;
@@ -81,6 +87,16 @@ export type GeneratedDbConnection = {
     upsertUserAlertProfile(args: { input: UserAlertProfileRow }): Promise<void>;
     setAlertsEnabled(args: { userId: string; alertsEnabled: boolean; updatedAt: number }): Promise<void>;
     upsertConversationContext(args: { input: ConversationContextRow }): Promise<void>;
+    createMobilePairing(args: { tokenHash: string; userId: string; spaceId: string; senderId: string }): Promise<void>;
+    redeemMobilePairing(args: { pairingTokenHash: string; credentialTokenHash: string; deviceId: string }): Promise<void>;
+    mobileUpdateLocation(args: {
+      credentialTokenHash: string; latitude: number; longitude: number;
+      accuracyMeters: number; capturedAt: number; defaultRadiusKm: number;
+    }): Promise<void>;
+    mobileSetSharing(args: { credentialTokenHash: string; enabled: boolean }): Promise<void>;
+    mobileCheckCredential(args: { credentialTokenHash: string; deviceId: string }): Promise<void>;
+    setMobileTrackingForSender(args: { senderId: string; active: boolean }): Promise<void>;
+    revokeMobileDevice(args: { deviceId: string }): Promise<void>;
   };
   subscriptionBuilder(): GeneratedSubscriptionBuilder;
   disconnect(): void;

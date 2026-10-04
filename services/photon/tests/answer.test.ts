@@ -55,6 +55,9 @@ test("how_far uses the fresh profile, and warns when stale", () => {
   assert.match(stale.text, /last shared location/);
   const noProfile = answerFollowUp("how_far", context({ profile: undefined }));
   assert.match(noProfile.text, /don’t have your location/);
+  // The Sauron app keeps the location current, so an hour without movement is still fresh.
+  const live = answerFollowUp("how_far", context({ now: 100_000 + 60 * 60 * 1000, liveTracked: true }));
+  assert.match(live.text, /from your location/);
 });
 
 test("show_me returns evidence when available and the camera id for continuity", () => {

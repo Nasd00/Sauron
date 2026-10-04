@@ -134,6 +134,40 @@ export const IncidentInput = __t.object("IncidentInput", {
 });
 export type IncidentInput = __Infer<typeof IncidentInput>;
 
+export const MobileCredential = __t.object("MobileCredential", {
+  tokenHash: __t.string(),
+  deviceId: __t.string(),
+  createdAt: __t.f64(),
+  revokedAt: __t.option(__t.f64()),
+});
+export type MobileCredential = __Infer<typeof MobileCredential>;
+
+export const MobileDevice = __t.object("MobileDevice", {
+  deviceId: __t.string(),
+  userId: __t.string(),
+  spaceId: __t.string(),
+  senderId: __t.string(),
+  trackingActive: __t.bool(),
+  sharingEnabled: __t.bool(),
+  revoked: __t.bool(),
+  pairedAt: __t.f64(),
+  updatedAt: __t.f64(),
+  lastLocationAt: __t.option(__t.f64()),
+  lastAccuracyMeters: __t.option(__t.f64()),
+});
+export type MobileDevice = __Infer<typeof MobileDevice>;
+
+export const MobilePairing = __t.object("MobilePairing", {
+  tokenHash: __t.string(),
+  userId: __t.string(),
+  spaceId: __t.string(),
+  senderId: __t.string(),
+  createdAt: __t.f64(),
+  expiresAt: __t.f64(),
+  usedAt: __t.option(__t.f64()),
+});
+export type MobilePairing = __Infer<typeof MobilePairing>;
+
 export const ModuleConfig = __t.object("ModuleConfig", {
   ownerIdentity: __t.identity(),
 });

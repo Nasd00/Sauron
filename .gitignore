@@ -85,3 +85,8 @@ apps/web/certs/
 .playwright-mcp/
 .iris-cache/
 .iris-logs/
+
+# Xcode
+xcuserdata/
+*.xcuserstate
+DerivedData/

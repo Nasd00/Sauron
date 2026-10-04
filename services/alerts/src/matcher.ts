@@ -1,5 +1,5 @@
-import type { Incident, UserAlertProfile, Watch } from "@tempmhacks/shared";
-import { evaluateLocationFreshness, haversineDistanceKm } from "@tempmhacks/shared/geo";
+import type { Incident, MobileDevice, UserAlertProfile, Watch } from "@tempmhacks/shared";
+import { evaluateProfileFreshness, haversineDistanceKm, isLiveTracked } from "@tempmhacks/shared/geo";
 
 // Re-exported so existing imports (and tests) keep a single source of truth.
 export { haversineDistanceKm };
@@ -12,6 +12,8 @@ export interface AlertMatcherStore {
 
 export interface ProfileAlertMatcherStore {
   listProfiles(): Promise<UserAlertProfile[]>;
+  /** Paired Sauron iPhones; a live-tracked profile stays fresh for longer between uploads. */
+  listMobileDevices(): Promise<MobileDevice[]>;
   /** Returns false when the incident/profile pair already has an alert. */
   createProfileAlert(incidentId: string, userId: string): Promise<boolean>;
 }
@@ -49,9 +51,11 @@ export async function matchConfirmedIncidentToProfiles(
 ): Promise<number> {
   if (incident.status !== "confirmed") return 0;
   let created = 0;
+  const devices = await store.listMobileDevices();
   for (const profile of await store.listProfiles()) {
     if (!profile.alertsEnabled) continue;
-    if (!evaluateLocationFreshness(profile.locationUpdatedAt, options.now).fresh) continue;
+    const live = isLiveTracked(profile.senderId, devices);
+    if (!evaluateProfileFreshness(profile, live, options.now).fresh) continue;
     const distanceKm = haversineDistanceKm(
       incident.latitude, incident.longitude, profile.latitude, profile.longitude,
     );

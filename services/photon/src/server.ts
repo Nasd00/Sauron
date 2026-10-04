@@ -11,6 +11,7 @@ import { createMessageProcessor } from "./processor.js";
 import { HelpAgent, type Person } from "./assist/agent.js";
 import { ValhallaRouter } from "./assist/routing.js";
 import { createShelterSource } from "./assist/shelters.js";
+import { createMobileApi, createMobileHttpHandler, createMobileStore } from "./mobile.js";
 import { createCommandRouter } from "./router.js";
 import { createMessagingStore } from "./store.js";
 import { parseRegistration, registerPhotonUser, RegistrationError } from "./users.js";
@@ -97,8 +98,21 @@ if (helpAgent) {
 }
 const route = createCommandRouter({
   store, geocoder, radiusKm: config.watchRadiusKm, publicAppUrl: config.publicAppUrl, assistant: helpAgent,
+  mobilePairingBaseUrl: config.mobilePairingBaseUrl,
 });
 const processMessage = createMessageProcessor({ store, route, logger });
+const handleMobile = createMobileHttpHandler({
+  api: createMobileApi({
+    store: createMobileStore(database.db), radiusKm: config.watchRadiusKm,
+    onUnexpectedError: (route, error) => logger.error({ route, error: String(error) }, "mobile_api_backend_error"),
+  }),
+  publicBaseUrl: config.mobilePairingBaseUrl,
+  adminSecret: config.photonAdminSecret,
+  appleTeamId: config.appleTeamId,
+  bundleId: config.mobileBundleId,
+  logger,
+});
+if (!config.mobilePairingBaseUrl) logger.info({}, "mobile_pairing_disabled: set MOBILE_PAIRING_BASE_URL to enable WATCH ME");
 
 function normalizedHeaders(headers: IncomingHttpHeaders): Record<string, string> {
   return Object.fromEntries(Object.entries(headers).flatMap(([key, value]) =>
@@ -132,6 +146,13 @@ const server = createServer(async (request, response) => {
   }
   if (request.method === "GET" && request.url === "/health") {
     response.writeHead(200, { "content-type": "application/json" }).end('{"ok":true}');
+    return;
+  }
+  try {
+    if (await handleMobile(request, response)) return;
+  } catch (error) {
+    logger.error({ error: String(error) }, "mobile_api_failed");
+    if (!response.headersSent) response.writeHead(500, { "content-type": "application/json" }).end('{"error":"internal"}');
     return;
   }
   if (request.method !== "POST" || !["/spectrum/webhook", "/admin/users"].includes(request.url ?? "")) {

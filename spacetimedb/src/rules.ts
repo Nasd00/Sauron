@@ -1,4 +1,4 @@
-import type { Alert, Camera, Incident, InboundReceipt, Observation, Watch, UserAlertProfile, ConversationContext } from "@tempmhacks/shared";
+import type { Alert, Camera, Incident, InboundReceipt, Observation, Watch, UserAlertProfile, ConversationContext, MobileDevice } from "@tempmhacks/shared";
 
 export function requireConfidence(confidence: number): void {
   if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
@@ -183,4 +183,119 @@ export function validateConversationContext(context: ConversationContext): Conve
   if (context.alertedAt !== undefined) requireTimestamp(context.alertedAt);
   requireTimestamp(context.updatedAt);
   return context;
+}
+
+// --- Mobile companion app (pairing, device credentials, location uploads) ---
+// Error messages start with a stable code so the HTTP layer can map them to status codes.
+
+export const MOBILE_PAIRING_TTL_MS = 10 * 60 * 1000;
+export const MOBILE_MAX_ACCURACY_METERS = 500;
+/** Uploads captured more than this far in the future (clock skew) are rejected. */
+export const MOBILE_MAX_FUTURE_SKEW_MS = 5 * 60 * 1000;
+/** Uploads older than this are rejected; the app only sends recent fixes. */
+export const MOBILE_MAX_FIX_AGE_MS = 60 * 60 * 1000;
+
+export type MobilePairing = {
+  tokenHash: string; userId: string; spaceId: string; senderId: string;
+  createdAt: number; expiresAt: number; usedAt?: number;
+};
+
+export type MobileLocationInput = {
+  latitude: number; longitude: number; accuracyMeters: number; capturedAt: number;
+};
+
+/** Tokens are stored and compared only as lowercase hex SHA-256 digests. */
+export function requireTokenHash(hash: string): void {
+  if (!/^[0-9a-f]{64}$/.test(hash)) throw new Error("token_invalid: token hash must be a SHA-256 hex digest");
+}
+
+export function requireNonEmpty(value: string, name: string): void {
+  if (!value.trim()) throw new Error(`${name} must not be empty`);
+}
+
+export function newMobilePairing(
+  input: { tokenHash: string; userId: string; spaceId: string; senderId: string }, now: number,
+): MobilePairing {
+  requireTokenHash(input.tokenHash);
+  requireNonEmpty(input.userId, "Pairing userId");
+  requireNonEmpty(input.spaceId, "Pairing spaceId");
+  requireNonEmpty(input.senderId, "Pairing senderId");
+  requireTimestamp(now);
+  return { ...input, createdAt: now, expiresAt: now + MOBILE_PAIRING_TTL_MS, usedAt: undefined };
+}
+
+/** Throws unless the pairing exists, is unused, and has not expired. */
+export function requireRedeemablePairing(pairing: MobilePairing | undefined, now: number): MobilePairing {
+  if (!pairing) throw new Error("pairing_invalid: pairing link is not valid");
+  if (pairing.usedAt !== undefined) throw new Error("pairing_used: pairing link was already used");
+  if (now > pairing.expiresAt) throw new Error("pairing_expired: pairing link has expired");
+  return pairing;
+}
+
+export function validateMobileLocation(location: MobileLocationInput, now: number): void {
+  try {
+    requireLatitude(location.latitude);
+    requireLongitude(location.longitude);
+    requireTimestamp(location.capturedAt);
+  } catch (error) {
+    throw new Error(`location_invalid: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (!Number.isFinite(location.accuracyMeters) || location.accuracyMeters < 0) {
+    throw new Error("location_invalid: accuracyMeters must be a nonnegative finite number");
+  }
+  if (location.accuracyMeters > MOBILE_MAX_ACCURACY_METERS) {
+    throw new Error(`location_invalid: accuracy worse than ${MOBILE_MAX_ACCURACY_METERS} m is not accepted`);
+  }
+  if (location.capturedAt > now + MOBILE_MAX_FUTURE_SKEW_MS) {
+    throw new Error("location_invalid: capturedAt is in the future");
+  }
+  if (location.capturedAt < now - MOBILE_MAX_FIX_AGE_MS) {
+    throw new Error("location_invalid: capturedAt is too old");
+  }
+}
+
+/** Throws unless the device may currently upload locations. */
+export function requireUploadingDevice(device: MobileDevice | undefined): MobileDevice {
+  if (!device || device.revoked) throw new Error("device_unauthorized: device is not paired");
+  if (!device.trackingActive) throw new Error("tracking_stopped: location sharing was stopped over iMessage");
+  return device;
+}
+
+/**
+ * Applies an accepted upload: the device's single location-backed profile is
+ * moved in place (created on the first upload after pairing). Returns undefined
+ * for an out-of-order fix older than the last accepted one, which is ignored.
+ */
+export function applyMobileLocation(
+  device: MobileDevice,
+  profile: UserAlertProfile | undefined,
+  location: MobileLocationInput,
+  defaultRadiusKm: number,
+  now: number,
+): { device: MobileDevice; profile: UserAlertProfile } | undefined {
+  requireUploadingDevice(device);
+  validateMobileLocation(location, now);
+  if (device.lastLocationAt !== undefined && location.capturedAt <= device.lastLocationAt) return undefined;
+  if (!Number.isFinite(defaultRadiusKm) || defaultRadiusKm <= 0) throw new Error("radiusKm must be greater than 0");
+  const nextProfile = validateUserAlertProfile({
+    userId: device.userId,
+    spaceId: device.spaceId,
+    senderId: device.senderId,
+    latitude: location.latitude,
+    longitude: location.longitude,
+    accuracyMeters: location.accuracyMeters,
+    locationUpdatedAt: location.capturedAt,
+    radiusKm: profile?.radiusKm ?? defaultRadiusKm,
+    // Tracking consent (pairing / WATCH ME) is what enables alerts for this profile.
+    alertsEnabled: true,
+    createdAt: profile?.createdAt ?? now,
+    updatedAt: now,
+  });
+  return {
+    device: {
+      ...device, sharingEnabled: true, lastLocationAt: location.capturedAt,
+      lastAccuracyMeters: location.accuracyMeters, updatedAt: now,
+    },
+    profile: nextProfile,
+  };
 }

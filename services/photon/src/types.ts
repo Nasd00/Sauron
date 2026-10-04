@@ -1,5 +1,5 @@
 import type {
-  Camera, ConversationContext, Incident, Observation, UserAlertProfile, Watch,
+  Camera, ConversationContext, Incident, MobileDevice, Observation, UserAlertProfile, Watch,
 } from "@tempmhacks/shared";
 
 export type InboundMessage = {
@@ -44,6 +44,14 @@ export interface MessagingStore {
   getCamera(cameraId: string): Promise<Camera | undefined>;
   getLatestObservation(cameraId: string): Promise<Observation | undefined>;
   countOtherNearbyCameras(cameraId: string, latitude: number, longitude: number, radiusKm: number): Promise<number>;
+
+  // Sauron iPhone companion app.
+  /** The sender's current (non-revoked) paired device, if any. */
+  getMobileDevice(senderId: string): Promise<MobileDevice | undefined>;
+  /** Stores a single-use pairing; `tokenHash` is the SHA-256 hex of the link token. */
+  createMobilePairing(input: { tokenHash: string; userId: string; spaceId: string; senderId: string }): Promise<void>;
+  /** STOP (false) / WATCH ME (true): gates whether the app's uploads are accepted. */
+  setMobileTracking(senderId: string, active: boolean): Promise<void>;
 }
 
 export interface StructuredLogger {

@@ -50,3 +50,35 @@ export function evaluateLocationFreshness(
   if (ageMs <= 0) return { fresh: true, ageMs: 0 };
   return { fresh: ageMs <= freshnessMs, ageMs };
 }
+
+/**
+ * Freshness window for a location kept current by the Sauron iPhone app. The app
+ * uploads on movement (~1 km) rather than on a timer, so a stationary phone goes
+ * quiet while its last fix stays accurate. The longer window covers that case and
+ * still expires the location if the phone dies or the app is removed.
+ */
+export const LIVE_TRACKING_FRESHNESS_MS = 6 * 60 * 60 * 1000;
+
+type LiveTrackingDevice = {
+  senderId: string; trackingActive: boolean; sharingEnabled: boolean; revoked: boolean; lastLocationAt?: number;
+};
+
+/** True when a paired device is actively keeping this sender's location current. */
+export function isLiveTracked(senderId: string, devices: Iterable<LiveTrackingDevice>): boolean {
+  for (const device of devices) {
+    if (device.senderId === senderId && device.trackingActive && device.sharingEnabled &&
+      !device.revoked && device.lastLocationAt !== undefined) return true;
+  }
+  return false;
+}
+
+/** Profile freshness, using the live-tracking window when the location comes from the app. */
+export function evaluateProfileFreshness(
+  profile: { locationUpdatedAt: number },
+  liveTracked: boolean,
+  now: number,
+): { fresh: boolean; ageMs: number } {
+  return evaluateLocationFreshness(
+    profile.locationUpdatedAt, now, liveTracked ? LIVE_TRACKING_FRESHNESS_MS : DEFAULT_FRESHNESS_MS,
+  );
+}

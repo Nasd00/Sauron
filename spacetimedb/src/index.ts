@@ -1,6 +1,6 @@
 import { Router, SyncResponse, t, SenderError, type Infer, type ReducerCtx } from "spacetimedb/server";
-import type { Alert, Camera, Observation, Incident, Watch, InboundReceipt, UserAlertProfile, ConversationContext } from "@tempmhacks/shared";
-import db, { cameraInput, observationInput, incidentInput, watchInput, alertInput, inboundReceiptInput, userAlertProfileInput, conversationContextInput } from "./schema";
+import type { Alert, Camera, Observation, Incident, Watch, InboundReceipt, UserAlertProfile, ConversationContext, MobileDevice } from "@tempmhacks/shared";
+import db, { cameraInput, observationInput, incidentInput, watchInput, alertInput, inboundReceiptInput, userAlertProfileInput, conversationContextInput, mobileDeviceInput } from "./schema";
 import {
   validateCamera, validateObservation, validateNewIncident, cameraStatusUpdate,
   requireCameraStatus, requireTimestamp, updateDetection, confirmIncident,
@@ -8,6 +8,7 @@ import {
   validateWatch, validateAlertStatus, claimAlert, markAlertSent, markAlertFailed,
   validateInboundReceipt,
   validateUserAlertProfile, validateConversationContext,
+  requireTokenHash, newMobilePairing, requireRedeemablePairing, requireUploadingDevice, applyMobileLocation,
 } from "./rules";
 
 export default db;
@@ -275,6 +276,125 @@ export const upsert_conversation_context = db.reducer({ input: conversationConte
   } else {
     ctx.db.conversation_context.insert(storedContext(context));
   }
+});
+
+// --- Mobile companion app ---
+// Photon generates tokens, hashes them (SHA-256), and passes only hashes here; raw
+// tokens are never stored. Private tables are scanned rather than looked up by
+// primary key, matching the inbound_receipt workaround above.
+
+function storedDevice(device: MobileDevice): Infer<typeof mobileDeviceInput> {
+  return { ...device, lastLocationAt: device.lastLocationAt, lastAccuracyMeters: device.lastAccuracyMeters };
+}
+
+function findPairing(ctx: Context, tokenHash: string) {
+  for (const pairing of ctx.db.mobile_pairing.iter()) if (pairing.tokenHash === tokenHash) return pairing;
+  return undefined;
+}
+
+/** Resolves a device bearer credential to its device row; throws when unknown or revoked. */
+function deviceForCredential(ctx: Context, credentialTokenHash: string): MobileDevice {
+  checked(() => requireTokenHash(credentialTokenHash));
+  for (const credential of ctx.db.mobile_credential.iter()) {
+    if (credential.tokenHash !== credentialTokenHash) continue;
+    if (credential.revokedAt !== undefined) break;
+    const device = ctx.db.mobile_device.deviceId.find(credential.deviceId);
+    if (device && !device.revoked) return device as MobileDevice;
+    break;
+  }
+  throw new SenderError("device_unauthorized: device is not paired");
+}
+
+function revokeDevice(ctx: Context, device: MobileDevice, now: number): void {
+  ctx.db.mobile_device.deviceId.update(storedDevice({
+    ...device, revoked: true, trackingActive: false, sharingEnabled: false, updatedAt: now,
+  }));
+  for (const credential of ctx.db.mobile_credential.iter()) {
+    if (credential.deviceId === device.deviceId && credential.revokedAt === undefined) {
+      ctx.db.mobile_credential.tokenHash.update({ ...credential, revokedAt: now });
+    }
+  }
+}
+
+export const create_mobile_pairing = db.reducer(
+  { tokenHash: t.string(), userId: t.string(), spaceId: t.string(), senderId: t.string() },
+  (ctx, input) => {
+    const pairing = checked(() => newMobilePairing(input, Date.now()));
+    if (findPairing(ctx, pairing.tokenHash)) throw new SenderError("pairing_invalid: duplicate pairing token");
+    ctx.db.mobile_pairing.insert({ ...pairing, usedAt: undefined });
+  });
+
+// Single-use redemption. One paired device per sender: earlier devices are revoked.
+export const redeem_mobile_pairing = db.reducer(
+  { pairingTokenHash: t.string(), credentialTokenHash: t.string(), deviceId: t.string() },
+  (ctx, { pairingTokenHash, credentialTokenHash, deviceId }) => {
+    const now = Date.now();
+    checked(() => { requireTokenHash(pairingTokenHash); requireTokenHash(credentialTokenHash); });
+    if (!deviceId.trim()) throw new SenderError("Device id must not be empty");
+    const pairing = checked(() => requireRedeemablePairing(findPairing(ctx, pairingTokenHash), now));
+    if (ctx.db.mobile_device.deviceId.find(deviceId)) throw new SenderError(`Device ${deviceId} already exists`);
+    ctx.db.mobile_pairing.tokenHash.update({ ...pairing, usedAt: now });
+    for (const existing of ctx.db.mobile_device.bySender.filter(pairing.senderId)) {
+      if (!existing.revoked) revokeDevice(ctx, existing as MobileDevice, now);
+    }
+    ctx.db.mobile_device.insert(storedDevice({
+      deviceId, userId: pairing.userId, spaceId: pairing.spaceId, senderId: pairing.senderId,
+      trackingActive: true, sharingEnabled: false, revoked: false, pairedAt: now, updatedAt: now,
+      lastLocationAt: undefined, lastAccuracyMeters: undefined,
+    }));
+    ctx.db.mobile_credential.insert({
+      tokenHash: credentialTokenHash, deviceId, createdAt: now, revokedAt: undefined,
+    });
+  });
+
+// Moves the paired user's single location-backed profile; never creates watches.
+export const mobile_update_location = db.reducer(
+  {
+    credentialTokenHash: t.string(), latitude: t.f64(), longitude: t.f64(),
+    accuracyMeters: t.f64(), capturedAt: t.f64(), defaultRadiusKm: t.f64(),
+  },
+  (ctx, { credentialTokenHash, defaultRadiusKm, ...location }) => {
+    const device = deviceForCredential(ctx, credentialTokenHash);
+    const existing = ctx.db.user_alert_profile.userId.find(device.userId) as UserAlertProfile | undefined;
+    const applied = checked(() => applyMobileLocation(device, existing, location, defaultRadiusKm, Date.now()));
+    if (!applied) return; // Out-of-order fix: ignored.
+    ctx.db.mobile_device.deviceId.update(storedDevice(applied.device));
+    if (existing) ctx.db.user_alert_profile.userId.update(storedProfile(applied.profile));
+    else ctx.db.user_alert_profile.insert(storedProfile(applied.profile));
+  });
+
+// The in-app Start/Stop Sharing toggle. Starting requires messaging-channel consent.
+export const mobile_set_sharing = db.reducer(
+  { credentialTokenHash: t.string(), enabled: t.bool() },
+  (ctx, { credentialTokenHash, enabled }) => {
+    const device = deviceForCredential(ctx, credentialTokenHash);
+    if (enabled) checked(() => requireUploadingDevice(device));
+    ctx.db.mobile_device.deviceId.update(storedDevice({ ...device, sharingEnabled: enabled, updatedAt: Date.now() }));
+  });
+
+// Read-only credential check for the app's status request.
+export const mobile_check_credential = db.reducer(
+  { credentialTokenHash: t.string(), deviceId: t.string() },
+  (ctx, { credentialTokenHash, deviceId }) => {
+    const device = deviceForCredential(ctx, credentialTokenHash);
+    if (device.deviceId !== deviceId) throw new SenderError("device_unauthorized: device is not paired");
+  });
+
+// STOP (active=false) and WATCH ME (active=true) over iMessage.
+export const set_mobile_tracking_for_sender = db.reducer(
+  { senderId: t.string(), active: t.bool() },
+  (ctx, { senderId, active }) => {
+    const now = Date.now();
+    for (const device of ctx.db.mobile_device.bySender.filter(senderId)) {
+      if (device.revoked || device.trackingActive === active) continue;
+      ctx.db.mobile_device.deviceId.update(storedDevice({ ...(device as MobileDevice), trackingActive: active, updatedAt: now }));
+    }
+  });
+
+export const revoke_mobile_device = db.reducer({ deviceId: t.string() }, (ctx, { deviceId }) => {
+  const device = ctx.db.mobile_device.deviceId.find(deviceId);
+  if (!device) throw new SenderError(`Device ${deviceId} does not exist`);
+  if (!device.revoked) revokeDevice(ctx, device as MobileDevice, Date.now());
 });
 
 // Owner-only schema fixture writes for integration setup.
