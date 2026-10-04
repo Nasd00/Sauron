@@ -35,6 +35,7 @@ export function loadConfig() {
     spacetimeDatabase: process.env.SPACETIMEDB_DATABASE?.trim() || "tempmhacks-local",
     spacetimeToken: process.env.SPACETIMEDB_TOKEN,
     watchRadiusKm: positiveNumber("WATCH_RADIUS_KM", 10),
+    publicAppUrl: required("PUBLIC_APP_URL"),
     geocoderBaseUrl: process.env.GEOCODER_BASE_URL,
     geocoderUserAgent: required("GEOCODER_USER_AGENT"),
     port: positiveNumber("PHOTON_PORT", 3001),

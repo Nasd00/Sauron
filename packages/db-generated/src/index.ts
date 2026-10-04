@@ -24,6 +24,16 @@ export type AlertRow = {
 export type InboundReceiptRow = {
   messageId: string; spaceId: string; senderId: string; receivedAt: number; contentType: string;
 };
+export type UserAlertProfileRow = {
+  userId: string; spaceId: string; senderId: string;
+  latitude: number; longitude: number; accuracyMeters?: number;
+  locationUpdatedAt: number; radiusKm: number; alertsEnabled: boolean;
+  createdAt: number; updatedAt: number;
+};
+export type ConversationContextRow = {
+  spaceId: string; activeIncidentId?: string; lastCameraId?: string;
+  lastIntent?: string; alertedAt?: number; updatedAt: number;
+};
 
 export type RowCallback<Row> = (row: Row) => void;
 export type RowTable<Row> = {
@@ -49,6 +59,8 @@ export type GeneratedDbConnection = {
     incident: RowTable<IncidentRow>;
     alert: RowTable<AlertRow>;
     watch: RowTable<WatchRow>;
+    user_alert_profile: RowTable<UserAlertProfileRow>;
+    conversation_context: RowTable<ConversationContextRow>;
   };
   reducers: {
     registerCamera(args: { camera: CameraRow }): Promise<void>;
@@ -62,9 +74,13 @@ export type GeneratedDbConnection = {
     deactivateWatchesForSender(args: { senderId: string }): Promise<void>;
     claimInboundMessage(args: { receipt: InboundReceiptRow }): Promise<void>;
     createAlert(args: { incidentId: string; watchId: string }): Promise<void>;
+    createAlertForProfile(args: { incidentId: string; userId: string }): Promise<void>;
     claimAlert(args: { alertId: string }): Promise<void>;
     markAlertSent(args: { alertId: string; providerMessageId: string; sentAt: number }): Promise<void>;
     markAlertFailed(args: { alertId: string; error: string }): Promise<void>;
+    upsertUserAlertProfile(args: { input: UserAlertProfileRow }): Promise<void>;
+    setAlertsEnabled(args: { userId: string; alertsEnabled: boolean; updatedAt: number }): Promise<void>;
+    upsertConversationContext(args: { input: ConversationContextRow }): Promise<void>;
   };
   subscriptionBuilder(): GeneratedSubscriptionBuilder;
   disconnect(): void;

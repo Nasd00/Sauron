@@ -1,4 +1,4 @@
-import type { Alert, Camera, Incident, InboundReceipt, Observation, Watch } from "@tempmhacks/shared";
+import type { Alert, Camera, Incident, InboundReceipt, Observation, Watch, UserAlertProfile, ConversationContext } from "@tempmhacks/shared";
 
 export function requireConfidence(confidence: number): void {
   if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
@@ -121,8 +121,7 @@ export function resolveIncident(incident: Incident, resolvedAt: number): Inciden
 
 /**
  * Validates the identity and metadata fields of an inbound receipt before it is
- * durably claimed. Pure; throws on invalid input. The reducer runs this inside
- * its transaction so a malformed receipt is rejected atomically with the claim.
+ * durably claimed. Pure; throws on invalid input.
  */
 export function validateInboundReceipt(receipt: InboundReceipt): void {
   if (!receipt.messageId.trim() || !receipt.spaceId.trim() || !receipt.senderId.trim()) {
@@ -132,17 +131,56 @@ export function validateInboundReceipt(receipt: InboundReceipt): void {
   if (!receipt.contentType.trim()) throw new Error("Inbound contentType must not be empty");
 }
 
-/**
- * Models the atomic inbound-claim decision. `alreadyClaimed` reflects whether a
- * receipt with the same messageId already exists in the same transaction. When
- * two webhook deliveries race, the database serializes their reducer calls on
- * the messageId primary key, so exactly one observes `alreadyClaimed === false`
- * and wins; the loser throws here. This function is the single source of truth
- * for that rule and is unit-tested independently of the live database.
- */
-export function claimInbound(receipt: InboundReceipt, alreadyClaimed: boolean): void {
-  if (alreadyClaimed) {
-    throw new Error(`Inbound message ${receipt.messageId} was already claimed`);
+export function requireLatitude(value: number): void {
+  if (!Number.isFinite(value) || value < -90 || value > 90) {
+    throw new Error("Latitude must be a finite number between -90 and 90");
   }
-  validateInboundReceipt(receipt);
+}
+
+export function requireLongitude(value: number): void {
+  if (!Number.isFinite(value) || value < -180 || value > 180) {
+    throw new Error("Longitude must be a finite number between -180 and 180");
+  }
+}
+
+/**
+ * Validates a current-location monitoring profile and returns a normalized copy.
+ * Pure; throws on invalid input. The reducer runs this inside its transaction so
+ * a malformed profile is rejected atomically with the upsert.
+ */
+export function validateUserAlertProfile(profile: UserAlertProfile): UserAlertProfile {
+  if (!profile.userId.trim()) throw new Error("Profile userId must not be empty");
+  if (!profile.spaceId.trim()) throw new Error("Profile spaceId must not be empty");
+  if (!profile.senderId.trim()) throw new Error("Profile senderId must not be empty");
+  requireLatitude(profile.latitude);
+  requireLongitude(profile.longitude);
+  if (profile.accuracyMeters !== undefined) {
+    if (!Number.isFinite(profile.accuracyMeters) || profile.accuracyMeters < 0) {
+      throw new Error("Profile accuracyMeters must be a nonnegative finite number");
+    }
+  }
+  requireTimestamp(profile.locationUpdatedAt);
+  if (!Number.isFinite(profile.radiusKm) || profile.radiusKm <= 0) {
+    throw new Error("Profile radiusKm must be greater than 0");
+  }
+  requireTimestamp(profile.createdAt);
+  requireTimestamp(profile.updatedAt);
+  return profile;
+}
+
+/** Validates a conversation context before it is persisted. Pure; throws on invalid input. */
+export function validateConversationContext(context: ConversationContext): ConversationContext {
+  if (!context.spaceId.trim()) throw new Error("ConversationContext spaceId must not be empty");
+  if (context.activeIncidentId !== undefined && !context.activeIncidentId.trim()) {
+    throw new Error("ConversationContext activeIncidentId must not be empty when present");
+  }
+  if (context.lastCameraId !== undefined && !context.lastCameraId.trim()) {
+    throw new Error("ConversationContext lastCameraId must not be empty when present");
+  }
+  if (context.lastIntent !== undefined && !context.lastIntent.trim()) {
+    throw new Error("ConversationContext lastIntent must not be empty when present");
+  }
+  if (context.alertedAt !== undefined) requireTimestamp(context.alertedAt);
+  requireTimestamp(context.updatedAt);
+  return context;
 }

@@ -76,10 +76,62 @@ npm run dev:photon
 npm run dev:alerts
 ```
 
-Supported iMessage commands are `WATCH <place>`, `STATUS`, `STOP`, and `HELP`.
-The alert service matches confirmed incidents to active watches with Haversine
-distance, claims each pending alert before sending, and records either the
-Spectrum message ID or a terminal failure.
+Supported iMessage commands are `STATUS`, `HELP`, `STOP`, and `WATCH <place>`,
+plus sharing a location from Apple Maps and natural follow-up questions after an
+alert. The alert service matches confirmed incidents to fresh location profiles
+and active watches with Haversine distance, claims each pending alert before
+sending, and records either the Spectrum message ID or a terminal failure. Replies
+longer than ~200 characters are split at paragraph breaks into a few messages.
+
+### Sharing a location (Apple Maps)
+
+The supported way to share location is native and needs no setup: in Apple Maps,
+tap the blue location dot, then **Share → Messages**, and send it to the line.
+The share arrives as a `maps.apple.com/place?...&coordinate=<lat>,<lng>` link,
+which Photon parses into a `UserAlertProfile`. Links named "My Location" are
+treated as the user's current location; other places are saved as the place
+shared. `LOC <lat>,<lng>` remains as a typed fallback for testing.
+
+Every reply states whether a location was received. Find My "Share My Location",
+Maps app-extension balloons, and Google Maps short links carry no readable
+coordinates; when one arrives, the agent says no location was received and
+explains how to share from Apple Maps instead.
+
+A share is a one-time snapshot, not continuous tracking. After the default
+30-minute freshness window, distance phrasing downgrades to "near your last
+shared location," `STATUS` reports how old the location is, and the agent asks
+the user to share again.
+
+### Current-location monitoring (primary surface)
+
+A shared location upserts one `UserAlertProfile` per sender with the point, a
+`locationUpdatedAt` freshness anchor, a radius, and `alertsEnabled`. Alerts are
+always on while the agent has a location; there is no pause toggle (`ALERTS ...`
+replies that alerts stay on). `STOP` is the only opt-out: it deactivates watches,
+disables the profile, and clears the conversation's incident anchor. The next
+location share re-enrolls the user cleanly.
+
+Proximity matching is deterministic. A confirmed incident alerts a profile only
+when the profile is enabled, its location is fresh (30-minute window), and the
+incident is within its radius. One alert per incident/profile is enforced, with
+no duplicates on retry. `WATCH <place>` remains a secondary, place-based fallback.
+
+### Grounded conversational follow-ups
+
+When an alert is delivered, the alert service anchors that conversation to the
+incident (a `ConversationContext` row keyed by space). The user can then ask
+natural follow-ups — "what happened?", "where is it?", "how far is it from me?",
+"is it still active?", "when was it first seen?", "which camera?", "show me",
+"any other cameras?" — without restating an incident ID. Intents are classified
+by keyword and answered only from structured database state (Incident +
+Observation + Camera + the user's profile). The model is never the source of
+truth: it does not invent incident type, location, distance, time, severity, or
+any safety advice. "Show me" sends the latest camera evidence frame as an
+attachment plus the live web link; the web app remains the deeper inspection
+layer.
+
+Set `PUBLIC_APP_URL` for the Photon service as well (used to build incident deep
+links in grounded answers).
 
 Alert links use `/incident/:incidentId`. The web app connects with the two
 `VITE_SPACETIMEDB_*` values, selects and focuses that exact incident, retains

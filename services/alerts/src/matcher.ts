@@ -1,21 +1,8 @@
-import type { Incident, Watch } from "@tempmhacks/shared";
+import type { Incident, UserAlertProfile, Watch } from "@tempmhacks/shared";
+import { evaluateLocationFreshness, haversineDistanceKm } from "@tempmhacks/shared/geo";
 
-const EARTH_RADIUS_KM = 6371.0088;
-
-const radians = (degrees: number) => degrees * Math.PI / 180;
-
-export function haversineDistanceKm(
-  latitudeA: number,
-  longitudeA: number,
-  latitudeB: number,
-  longitudeB: number,
-): number {
-  const latitudeDelta = radians(latitudeB - latitudeA);
-  const longitudeDelta = radians(longitudeB - longitudeA);
-  const a = Math.sin(latitudeDelta / 2) ** 2
-    + Math.cos(radians(latitudeA)) * Math.cos(radians(latitudeB)) * Math.sin(longitudeDelta / 2) ** 2;
-  return 2 * EARTH_RADIUS_KM * Math.asin(Math.min(1, Math.sqrt(a)));
-}
+// Re-exported so existing imports (and tests) keep a single source of truth.
+export { haversineDistanceKm };
 
 export interface AlertMatcherStore {
   listActiveWatches(): Promise<Watch[]>;
@@ -23,6 +10,16 @@ export interface AlertMatcherStore {
   createAlert(incidentId: string, watchId: string): Promise<boolean>;
 }
 
+export interface ProfileAlertMatcherStore {
+  listProfiles(): Promise<UserAlertProfile[]>;
+  /** Returns false when the incident/profile pair already has an alert. */
+  createProfileAlert(incidentId: string, userId: string): Promise<boolean>;
+}
+
+/**
+ * Secondary, place-based matching: confirmed incidents against active WATCH
+ * subscriptions. Unchanged behavior; kept as the fallback surface.
+ */
 export async function matchConfirmedIncident(incident: Incident, store: AlertMatcherStore): Promise<number> {
   if (incident.status !== "confirmed") return 0;
   let created = 0;
@@ -32,6 +29,35 @@ export async function matchConfirmedIncident(incident: Incident, store: AlertMat
       incident.latitude, incident.longitude, watch.latitude, watch.longitude,
     );
     if (distanceKm <= watch.radiusKm && await store.createAlert(incident.id, watch.id)) created += 1;
+  }
+  return created;
+}
+
+export type ProfileMatchOptions = { now: number };
+
+/**
+ * Primary, current-location matching. A confirmed incident alerts a profile only
+ * when alerts are enabled, the shared location is still fresh, and the incident is
+ * within the profile's radius. Deterministic; the freshness and distance rules are
+ * pure and shared with the conversational phrasing layer. One alert per
+ * incident/profile is enforced by the store's createProfileAlert.
+ */
+export async function matchConfirmedIncidentToProfiles(
+  incident: Incident,
+  store: ProfileAlertMatcherStore,
+  options: ProfileMatchOptions,
+): Promise<number> {
+  if (incident.status !== "confirmed") return 0;
+  let created = 0;
+  for (const profile of await store.listProfiles()) {
+    if (!profile.alertsEnabled) continue;
+    if (!evaluateLocationFreshness(profile.locationUpdatedAt, options.now).fresh) continue;
+    const distanceKm = haversineDistanceKm(
+      incident.latitude, incident.longitude, profile.latitude, profile.longitude,
+    );
+    if (distanceKm <= profile.radiusKm && await store.createProfileAlert(incident.id, profile.userId)) {
+      created += 1;
+    }
   }
   return created;
 }

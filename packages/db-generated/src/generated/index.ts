@@ -38,6 +38,7 @@ import ClaimAlertReducer from "./claim_alert_reducer";
 import ClaimInboundMessageReducer from "./claim_inbound_message_reducer";
 import ConfirmIncidentReducer from "./confirm_incident_reducer";
 import CreateAlertReducer from "./create_alert_reducer";
+import CreateAlertForProfileReducer from "./create_alert_for_profile_reducer";
 import CreateIncidentReducer from "./create_incident_reducer";
 import CreateWatchReducer from "./create_watch_reducer";
 import DeactivateWatchesForSenderReducer from "./deactivate_watches_for_sender_reducer";
@@ -49,16 +50,21 @@ import MarkAlertSentReducer from "./mark_alert_sent_reducer";
 import PublishObservationReducer from "./publish_observation_reducer";
 import RegisterCameraReducer from "./register_camera_reducer";
 import ResolveIncidentReducer from "./resolve_incident_reducer";
+import SetAlertsEnabledReducer from "./set_alerts_enabled_reducer";
 import SetCameraStatusReducer from "./set_camera_status_reducer";
 import UpdateIncidentDetectionReducer from "./update_incident_detection_reducer";
+import UpsertConversationContextReducer from "./upsert_conversation_context_reducer";
+import UpsertUserAlertProfileReducer from "./upsert_user_alert_profile_reducer";
 
 // Import all procedure arg schemas
 
 // Import all table schema definitions
 import AlertRow from "./alert_table";
 import CameraRow from "./camera_table";
+import ConversationContextRow from "./conversation_context_table";
 import IncidentRow from "./incident_table";
 import ObservationRow from "./observation_table";
+import UserAlertProfileRow from "./user_alert_profile_table";
 import WatchRow from "./watch_table";
 
 /** Type-only namespace exports for generated type groups. */
@@ -91,6 +97,17 @@ const tablesSchema = __schema({
       { name: 'camera_id_key', constraint: 'unique', columns: ['id'] },
     ],
   }, CameraRow),
+  conversationContext: __table({
+    name: 'conversation_context',
+    indexes: [
+      { accessor: 'spaceId', name: 'conversation_context_space_id_idx_btree', algorithm: 'btree', columns: [
+        'spaceId',
+      ] },
+    ],
+    constraints: [
+      { name: 'conversation_context_space_id_key', constraint: 'unique', columns: ['spaceId'] },
+    ],
+  }, ConversationContextRow),
   incident: __table({
     name: 'incident',
     indexes: [
@@ -122,6 +139,23 @@ const tablesSchema = __schema({
       { name: 'observation_id_key', constraint: 'unique', columns: ['id'] },
     ],
   }, ObservationRow),
+  userAlertProfile: __table({
+    name: 'user_alert_profile',
+    indexes: [
+      { accessor: 'byAlertsEnabled', name: 'user_alert_profile_alerts_enabled_idx_btree', algorithm: 'btree', columns: [
+        'alertsEnabled',
+      ] },
+      { accessor: 'bySender', name: 'user_alert_profile_sender_id_idx_btree', algorithm: 'btree', columns: [
+        'senderId',
+      ] },
+      { accessor: 'userId', name: 'user_alert_profile_user_id_idx_btree', algorithm: 'btree', columns: [
+        'userId',
+      ] },
+    ],
+    constraints: [
+      { name: 'user_alert_profile_user_id_key', constraint: 'unique', columns: ['userId'] },
+    ],
+  }, UserAlertProfileRow),
   watch: __table({
     name: 'watch',
     indexes: [
@@ -148,6 +182,7 @@ const reducersSchema = __reducers(
   __reducerSchema("claim_inbound_message", ClaimInboundMessageReducer),
   __reducerSchema("confirm_incident", ConfirmIncidentReducer),
   __reducerSchema("create_alert", CreateAlertReducer),
+  __reducerSchema("create_alert_for_profile", CreateAlertForProfileReducer),
   __reducerSchema("create_incident", CreateIncidentReducer),
   __reducerSchema("create_watch", CreateWatchReducer),
   __reducerSchema("deactivate_watches_for_sender", DeactivateWatchesForSenderReducer),
@@ -159,30 +194,80 @@ const reducersSchema = __reducers(
   __reducerSchema("publish_observation", PublishObservationReducer),
   __reducerSchema("register_camera", RegisterCameraReducer),
   __reducerSchema("resolve_incident", ResolveIncidentReducer),
+  __reducerSchema("set_alerts_enabled", SetAlertsEnabledReducer),
   __reducerSchema("set_camera_status", SetCameraStatusReducer),
   __reducerSchema("update_incident_detection", UpdateIncidentDetectionReducer),
+  __reducerSchema("upsert_conversation_context", UpsertConversationContextReducer),
+  __reducerSchema("upsert_user_alert_profile", UpsertUserAlertProfileReducer),
 );
 
 /** The schema information for all procedures in this module. This is defined the same way as the procedures would have been defined in the server. */
 const proceduresSchema = __procedures(
 );
 
+type __SchemaWithTableAccessorAliases = Omit<typeof tablesSchema.schemaType, "tables"> & {
+  tables: typeof tablesSchema.schemaType.tables & {
+    /** @deprecated Use `conversationContext` instead. This alias will be removed in the next major version. */
+    readonly "conversation_context": Omit<typeof tablesSchema.schemaType.tables["conversationContext"], "accessorName"> & { readonly accessorName: "conversation_context" };
+    /** @deprecated Use `userAlertProfile` instead. This alias will be removed in the next major version. */
+    readonly "user_alert_profile": Omit<typeof tablesSchema.schemaType.tables["userAlertProfile"], "accessorName"> & { readonly accessorName: "user_alert_profile" };
+  };
+};
+
 /** The remote SpacetimeDB module schema, both runtime and type information. */
 const REMOTE_MODULE = {
   versionInfo: {
     cliVersion: "2.10.2" as const,
   },
-  tables: tablesSchema.schemaType.tables,
+  tables: tablesSchema.schemaType.tables as __SchemaWithTableAccessorAliases["tables"],
   reducers: reducersSchema.reducersType.reducers,
   ...proceduresSchema,
 } satisfies __RemoteModule<
-  typeof tablesSchema.schemaType,
+  __SchemaWithTableAccessorAliases,
   typeof reducersSchema.reducersType,
   typeof proceduresSchema
 >;
 
+const tableAccessorAliases = {
+  "conversation_context": "conversationContext",
+  "user_alert_profile": "userAlertProfile",
+} as const;
+
+function __withTableAccessorAliases<T extends object>(target: T, freeze = false): T {
+  const out = Object.create(Object.getPrototypeOf(target)) as T & Record<string, unknown>;
+  Object.defineProperties(out, Object.getOwnPropertyDescriptors(target));
+  for (const [deprecatedAccessor, targetAccessor] of Object.entries(tableAccessorAliases)) {
+    if (deprecatedAccessor in out) {
+      continue;
+    }
+    Object.defineProperty(out, deprecatedAccessor, {
+      enumerable: true,
+      configurable: false,
+      get: () => out[targetAccessor],
+    });
+  }
+  return freeze ? Object.freeze(out) : out;
+}
+
+type __DbViewBase = __DbConnectionImpl<typeof REMOTE_MODULE>["db"];
+export type DbView = __DbViewBase & {
+  /** @deprecated Use `conversationContext` instead. This alias will be removed in the next major version. */
+  readonly "conversation_context": __DbViewBase["conversationContext"];
+  /** @deprecated Use `userAlertProfile` instead. This alias will be removed in the next major version. */
+  readonly "user_alert_profile": __DbViewBase["userAlertProfile"];
+};
+
+type __TablesBase = __QueryBuilder<typeof tablesSchema.schemaType>;
+export type Tables = __TablesBase & {
+  /** @deprecated Use `conversationContext` instead. This alias will be removed in the next major version. */
+  readonly "conversation_context": __TablesBase["conversationContext"];
+  /** @deprecated Use `userAlertProfile` instead. This alias will be removed in the next major version. */
+  readonly "user_alert_profile": __TablesBase["userAlertProfile"];
+};
+
 /** The tables available in this remote SpacetimeDB module. Each table reference doubles as a query builder. */
-export const tables: __QueryBuilder<typeof tablesSchema.schemaType> = __makeQueryBuilder(tablesSchema.schemaType);
+const tablesBase: __TablesBase = __makeQueryBuilder(tablesSchema.schemaType);
+export const tables: Tables = __withTableAccessorAliases(tablesBase, true) as Tables;
 
 /** The reducers available in this remote SpacetimeDB module. */
 export const reducers = __convertToAccessorMap(reducersSchema.reducersType.reducers);
@@ -191,13 +276,13 @@ export const reducers = __convertToAccessorMap(reducersSchema.reducersType.reduc
 export const procedures = __convertToAccessorMap(proceduresSchema.procedures);
 
 /** The context type returned in callbacks for all possible events. */
-export type EventContext = __EventContextInterface<typeof REMOTE_MODULE>;
+export type EventContext = Omit<__EventContextInterface<typeof REMOTE_MODULE>, "db"> & { db: DbView };
 /** The context type returned in callbacks for reducer events. */
-export type ReducerEventContext = __ReducerEventContextInterface<typeof REMOTE_MODULE>;
+export type ReducerEventContext = Omit<__ReducerEventContextInterface<typeof REMOTE_MODULE>, "db"> & { db: DbView };
 /** The context type returned in callbacks for subscription events. */
-export type SubscriptionEventContext = __SubscriptionEventContextInterface<typeof REMOTE_MODULE>;
+export type SubscriptionEventContext = Omit<__SubscriptionEventContextInterface<typeof REMOTE_MODULE>, "db"> & { db: DbView };
 /** The context type returned in callbacks for error events. */
-export type ErrorContext = __ErrorContextInterface<typeof REMOTE_MODULE>;
+export type ErrorContext = Omit<__ErrorContextInterface<typeof REMOTE_MODULE>, "db"> & { db: DbView };
 /** The subscription handle type to manage active subscriptions created from a {@link SubscriptionBuilder}. */
 export type SubscriptionHandle = __SubscriptionHandleImpl<typeof REMOTE_MODULE>;
 
@@ -209,6 +294,13 @@ export class DbConnectionBuilder extends __DbConnectionBuilder<DbConnection> {}
 
 /** The typed database connection to manage connections to the remote SpacetimeDB instance. This class has type information specific to the generated module. */
 export class DbConnection extends __DbConnectionImpl<typeof REMOTE_MODULE> {
+  declare db: DbView;
+
+  constructor(config: __DbConnectionConfig<typeof REMOTE_MODULE>) {
+    super(config);
+    this.db = __withTableAccessorAliases(this.db) as DbView;
+  }
+
   /** Creates a new {@link DbConnectionBuilder} to configure and connect to the remote SpacetimeDB instance. */
   static builder = (): DbConnectionBuilder => {
     return new DbConnectionBuilder(REMOTE_MODULE, (config: __DbConnectionConfig<typeof REMOTE_MODULE>) => new DbConnection(config));

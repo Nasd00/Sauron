@@ -1,9 +1,12 @@
 import type {
   AlertRow, CameraRow, GeneratedDbConnection, IncidentRow, ObservationRow, RowCallback,
-  WatchRow,
+  WatchRow, UserAlertProfileRow, ConversationContextRow,
 } from "@tempmhacks/db-generated";
 import { DbConnection } from "@tempmhacks/db-generated";
-import type { Alert, Camera, Incident, InboundReceipt, Observation, Watch } from "./types.js";
+import type {
+  Alert, Camera, Incident, InboundReceipt, Observation, Watch,
+  UserAlertProfile, ConversationContext,
+} from "./types.js";
 
 export type Subscription<Row> = (callback: RowCallback<Row>) => () => void;
 
@@ -50,14 +53,25 @@ function toAlert(row: AlertRow): Alert {
   return { ...row, status: row.status as Alert["status"] };
 }
 
+function toUserAlertProfile(row: UserAlertProfileRow): UserAlertProfile {
+  return { ...row };
+}
+
+function toConversationContext(row: ConversationContextRow): ConversationContext {
+  return { ...row };
+}
+
 export type Db = {
   cameras: {
     subscribe(callback: RowCallback<Camera>): () => void;
+    get(id: string): Camera | undefined;
+    list(): Camera[];
     register(camera: Camera): Promise<void>;
     setStatus(id: string, status: Camera["status"], lastSeenAt: number): Promise<void>;
   };
   observations: {
     subscribe(callback: RowCallback<Observation>): () => void;
+    latestForCamera(cameraId: string): Observation | undefined;
     publish(observation: Observation): Promise<void>;
   };
   incidents: {
@@ -73,6 +87,7 @@ export type Db = {
     subscribe(callback: RowCallback<Alert>): () => void;
     listPending(): Alert[];
     create(incidentId: string, watchId: string): Promise<void>;
+    createForProfile(incidentId: string, userId: string): Promise<void>;
     claim(id: string): Promise<void>;
     markSent(id: string, providerMessageId: string, sentAt?: number): Promise<void>;
     markFailed(id: string, error: string): Promise<void>;
@@ -88,12 +103,28 @@ export type Db = {
   inbound: {
     claim(receipt: InboundReceipt): Promise<boolean>;
   };
+  profiles: {
+    list(): UserAlertProfile[];
+    get(userId: string): UserAlertProfile | undefined;
+    getForSender(senderId: string): UserAlertProfile | undefined;
+    upsert(profile: UserAlertProfile): Promise<void>;
+    setAlertsEnabled(userId: string, alertsEnabled: boolean, updatedAt?: number): Promise<void>;
+  };
+  conversationContexts: {
+    get(spaceId: string): ConversationContext | undefined;
+    upsert(context: ConversationContext): Promise<void>;
+  };
 };
 
 export function createDb(connection: GeneratedDbConnection): Db {
   return {
     cameras: {
       subscribe: callback => subscribe(connection.db.camera)(row => callback(toCamera(row))),
+      get: id => {
+        for (const row of connection.db.camera.iter()) if (row.id === id) return toCamera(row);
+        return undefined;
+      },
+      list: () => Array.from(connection.db.camera.iter(), toCamera),
       register: camera => connection.reducers.registerCamera({ camera }),
       setStatus: (id, status, lastSeenAt) => connection.reducers.setCameraStatus({
         cameraId: id, status, lastSeenAt,
@@ -101,6 +132,15 @@ export function createDb(connection: GeneratedDbConnection): Db {
     },
     observations: {
       subscribe: callback => subscribe(connection.db.observation)(row => callback(toObservation(row))),
+      latestForCamera: cameraId => {
+        let latest: Observation | undefined;
+        for (const row of connection.db.observation.iter()) {
+          if (row.cameraId !== cameraId) continue;
+          const observation = toObservation(row);
+          if (!latest || observation.timestamp > latest.timestamp) latest = observation;
+        }
+        return latest;
+      },
       publish: observation => connection.reducers.publishObservation({ observation }),
     },
     incidents: {
@@ -120,6 +160,8 @@ export function createDb(connection: GeneratedDbConnection): Db {
       subscribe: callback => subscribe(connection.db.alert)(row => callback(toAlert(row))),
       listPending: () => Array.from(connection.db.alert.iter(), toAlert).filter(alert => alert.status === "pending"),
       create: (incidentId, watchId) => connection.reducers.createAlert({ incidentId, watchId }),
+      createForProfile: (incidentId, userId) =>
+        connection.reducers.createAlertForProfile({ incidentId, userId }),
       claim: alertId => connection.reducers.claimAlert({ alertId }),
       markSent: (alertId, providerMessageId, sentAt = Date.now()) =>
         connection.reducers.markAlertSent({ alertId, providerMessageId, sentAt }),
@@ -147,6 +189,33 @@ export function createDb(connection: GeneratedDbConnection): Db {
           throw error;
         }
       },
+    },
+    profiles: {
+      list: () => Array.from(connection.db.user_alert_profile.iter(), toUserAlertProfile),
+      get: userId => {
+        for (const row of connection.db.user_alert_profile.iter()) {
+          if (row.userId === userId) return toUserAlertProfile(row);
+        }
+        return undefined;
+      },
+      getForSender: senderId => {
+        for (const row of connection.db.user_alert_profile.iter()) {
+          if (row.senderId === senderId) return toUserAlertProfile(row);
+        }
+        return undefined;
+      },
+      upsert: profile => connection.reducers.upsertUserAlertProfile({ input: profile }),
+      setAlertsEnabled: (userId, alertsEnabled, updatedAt = Date.now()) =>
+        connection.reducers.setAlertsEnabled({ userId, alertsEnabled, updatedAt }),
+    },
+    conversationContexts: {
+      get: spaceId => {
+        for (const row of connection.db.conversation_context.iter()) {
+          if (row.spaceId === spaceId) return toConversationContext(row);
+        }
+        return undefined;
+      },
+      upsert: context => connection.reducers.upsertConversationContext({ input: context }),
     },
   };
 }

@@ -72,6 +72,55 @@ export type InboundReceipt = {
   contentType: string;
 };
 
+/**
+ * Current-location monitoring profile for an enrolled user. This is the primary
+ * alerting surface: a user shares their device location once and the system
+ * continuously evaluates whether a confirmed incident is close enough to matter.
+ * `WATCH <place>` remains a secondary, place-based fallback modeled by {@link Watch}.
+ *
+ * `locationUpdatedAt` is the freshness anchor. Alerts and "near you" phrasing are
+ * only valid when the location is sufficiently recent; see freshness rules.
+ */
+export type UserAlertProfile = {
+  /** Stable identity for the profile row. One active profile per senderId. */
+  userId: string;
+  /** Stable Spectrum conversation identifier used for replies and alerts. */
+  spaceId: string;
+  /** Stable provider-neutral Spectrum participant identifier. */
+  senderId: string;
+  latitude: number;
+  longitude: number;
+  /** Reported horizontal accuracy of the shared location, in meters. */
+  accuracyMeters?: number;
+  /** Unix ms when the location was last shared. Freshness is measured from here. */
+  locationUpdatedAt: number;
+  radiusKm: number;
+  /** When false, the user is enrolled but suppressed from all proximity alerts. */
+  alertsEnabled: boolean;
+  createdAt: number;
+  updatedAt: number;
+};
+
+/**
+ * Associates an iMessage conversation (space) with the incident the user was most
+ * recently alerted about, enabling grounded natural-language follow-ups ("what
+ * happened?", "show me") without the user restating an incident ID. One context
+ * per space; the active incident advances as new alerts land in the conversation.
+ */
+export type ConversationContext = {
+  /** Stable Spectrum conversation identifier; the primary key for the context. */
+  spaceId: string;
+  /** Incident the conversation is currently anchored to, if any. */
+  activeIncidentId?: string;
+  /** Camera most recently shown or referenced for the active incident, if any. */
+  lastCameraId?: string;
+  /** Most recent classified follow-up intent, for observability and continuity. */
+  lastIntent?: string;
+  /** Unix ms when the anchoring alert was sent, if the context came from an alert. */
+  alertedAt?: number;
+  updatedAt: number;
+};
+
 export function incidentUrl(baseUrl: string, incidentId: string): string {
   const base = new URL(baseUrl);
   const normalizedPath = base.pathname.replace(/\/$/, "");
