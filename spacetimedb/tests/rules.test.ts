@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { Alert, Camera, Incident, IncidentStatus, Observation, Watch } from "@tempmhacks/shared";
+import type { Alert, Camera, Incident, IncidentStatus, InboundReceipt, Observation, Watch } from "@tempmhacks/shared";
 import {
   cameraStatusUpdate, requireConfidence, requireTimestamp, validateCamera,
   validateObservation, validateNewIncident, updateDetection,
   confirmIncident, dismissIncident, resolveIncident, validateWatch,
   claimAlert, markAlertSent, markAlertFailed,
+  claimInbound, validateInboundReceipt,
 } from "../src/rules.js";
 
 const candidate: Incident = {
@@ -115,4 +116,32 @@ test("confirmation and resolution timestamps cannot be overwritten", () => {
   assert.equal(resolved.confirmedAt, 3000);
   assert.equal(resolved.resolvedAt, 4000);
   assert.throws(() => resolveIncident(resolved, 5000));
+});
+
+test("inbound claim is atomic: first delivery wins, duplicate is rejected", () => {
+  const receipt: InboundReceipt = {
+    messageId: "spc-msg-1", spaceId: "any;-;+15551234567", senderId: "+15551234567",
+    receivedAt: 1_700_000_000_000, contentType: "text",
+  };
+  // First delivery: nothing claimed yet, so the claim succeeds (no throw).
+  assert.doesNotThrow(() => claimInbound(receipt, false));
+  // Racing/duplicate delivery: the row already exists, so this one loses.
+  assert.throws(() => claimInbound(receipt, true), /already claimed/);
+});
+
+test("inbound claim validates identity and metadata before claiming", () => {
+  const base: InboundReceipt = {
+    messageId: "spc-msg-2", spaceId: "space-2", senderId: "sender-2",
+    receivedAt: 1_700_000_000_000, contentType: "text",
+  };
+  // Valid receipt passes validation.
+  assert.doesNotThrow(() => validateInboundReceipt(base));
+  // Empty identity fields are rejected.
+  for (const field of ["messageId", "spaceId", "senderId"] as const) {
+    assert.throws(() => validateInboundReceipt({ ...base, [field]: "   " }), /identity fields/);
+  }
+  // Empty content type is rejected.
+  assert.throws(() => validateInboundReceipt({ ...base, contentType: "" }), /contentType/);
+  // Invalid timestamp is rejected.
+  assert.throws(() => validateInboundReceipt({ ...base, receivedAt: -1 }), /Timestamp/);
 });

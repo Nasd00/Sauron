@@ -2,6 +2,7 @@ import { createServer, type IncomingHttpHeaders } from "node:http";
 import { Spectrum } from "spectrum-ts";
 import { imessage } from "spectrum-ts/providers/imessage";
 import { connectDb } from "@tempmhacks/shared/db";
+import { createImessageMessenger } from "@tempmhacks/messaging";
 import { loadConfig } from "./config.js";
 import { NominatimGeocoder } from "./geocoder.js";
 import { normalizeSpectrumMessage } from "./normalize.js";
@@ -27,6 +28,7 @@ const geocoder = new NominatimGeocoder({
   userAgent: config.geocoderUserAgent,
 });
 const route = createCommandRouter({ store, geocoder, radiusKm: config.watchRadiusKm });
+const messenger = createImessageMessenger(spectrumApp);
 const logger = {
   info: (fields: Record<string, unknown>, message: string) => console.info(JSON.stringify({ level: "info", message, ...fields })),
   error: (fields: Record<string, unknown>, message: string) => console.error(JSON.stringify({ level: "error", message, ...fields })),
@@ -63,7 +65,7 @@ const server = createServer(async (request, response) => {
     async (space, message) => {
       const normalized = normalizeSpectrumMessage(space, message);
       if (!normalized) return;
-      await processMessage(normalized, text => space.send(text));
+      await processMessage(normalized, text => messenger.sendText(normalized.spaceId, text));
     },
   );
   response.writeHead(result.status, result.headers).end(Buffer.from(result.body));

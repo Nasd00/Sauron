@@ -3,11 +3,11 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "workspaces": ["packages/shared", "packages/db-generated", "apps/web", "services/cv", "services/photon", "services/alerts", "spacetimedb"],
+  "workspaces": ["packages/shared", "packages/db-generated", "packages/messaging", "apps/web", "services/cv", "services/photon", "services/alerts", "spacetimedb"],
   "description": "Repository scaffold and local development commands for tempMhacks",
   "scripts": {
     "db:generate": "mkdir -p packages/db-generated/src/generated && spacetime generate --lang typescript --out-dir packages/db-generated/src/generated --module-path spacetimedb",
-    "build:shared": "npm run build --workspace @tempmhacks/db-generated && npm run build --workspace @tempmhacks/shared",
+    "build:shared": "npm run build --workspace @tempmhacks/db-generated && npm run build --workspace @tempmhacks/shared && npm run build --workspace @tempmhacks/messaging",
     "typecheck": "npm run build:shared && tsc --noEmit -p tsconfig.json && npm run typecheck --workspace @tempmhacks/spacetimedb",
     "test": "npm run typecheck && tsx --test apps/web/tests/*.test.ts spacetimedb/tests/*.test.ts services/cv/tests/*.test.ts services/photon/tests/*.test.ts services/alerts/tests/*.test.ts scripts/demo/*.test.ts",
     "db:build": "npm run typecheck && spacetime build --module-path spacetimedb",
