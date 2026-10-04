@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { Spectrum } from "spectrum-ts";
 import { imessage } from "@spectrum-ts/imessage";
 import { connectDb } from "@tempmhacks/shared/db";
+import { createImessageMessenger } from "@tempmhacks/messaging";
 import { matchConfirmedIncident } from "./matcher.js";
 import { createAlertSender } from "./sender.js";
 import { createAlertServiceStore } from "./store.js";
@@ -33,17 +34,13 @@ const app = await Spectrum({
   projectSecret: requiredEither("SPECTRUM_PROJECT_SECRET", "PHOTON_SECRET"),
   providers: [imessage.config()],
 });
-const imessageApp = imessage(app);
+const imessageMessenger = createImessageMessenger(app);
 const store = createAlertServiceStore(database.db);
 const sendAlert = createAlertSender({
   store,
   publicAppUrl: required("PUBLIC_APP_URL"),
   messenger: {
-    send: async (spaceId, text) => {
-      const space = await imessageApp.space.get(spaceId);
-      const message = await space.send(text);
-      return message?.id;
-    },
+    send: (spaceId, text) => imessageMessenger.sendText(spaceId, text),
   },
 });
 
